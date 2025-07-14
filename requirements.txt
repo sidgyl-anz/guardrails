@@ -10,14 +10,13 @@ langgraph
 google-genai
 
 # Guardrail Libraries
-presidio_analyzer
-presidio_anonymizer
+# Pinned presidio versions to ensure compatibility with Pydantic v2
+presidio_analyzer>=2.2.362
+presidio_anonymizer>=2.2.362
 detoxify
 transformers
 torch
 pandas
 scikit-learn
 sentence-transformers
-
-# Updated spacy to a version compatible with Pydantic v2, used by FastAPI
 spacy
