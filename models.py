@@ -21,8 +21,10 @@ else:
     print(f"✅ GEMINI_API_KEY found: {GEMINI_API_KEY[:4]}...{GEMINI_API_KEY[-4:]}")
 
 # --- Initialize Google AI (Gemini) ---
+print("DEBUG: GEMINI_API_KEY from env:", os.environ.get("GEMINI_API_KEY"))
+
 client = genai.Client(api_key=GEMINI_API_KEY)
-llm_model = genai.GenerativeModel("gemini-1.5-flash-latest", client=client)
+llm_model = genai.GenerativeModel("gemini-2.5-flash-lite-preview-06-17", client=client)
 print("✅ Google AI (Gemini) Client Initialized")
 
 # --- Foundational Models (spaCy, SentenceTransformer) ---
