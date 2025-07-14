@@ -17,8 +17,6 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
     raise ValueError("The environment variable GEMINI_API_KEY must be set.")
-else:
-    print(f"✅ GEMINI_API_KEY found: {GEMINI_API_KEY[:4]}...{GEMINI_API_KEY[-4:]}")
 
 # --- Initialize Google AI (Gemini) ---
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -31,7 +29,8 @@ sentence_transformer_model = SentenceTransformer('all-MiniLM-L6-v2')
 print("✅ spaCy and SentenceTransformer Models Loaded")
 
 # --- PII Detection (Presidio) ---
-pii_analyzer = AnalyzerEngine()
+# The AnalyzerEngine requires an NLP engine to be passed at initialization
+pii_analyzer = AnalyzerEngine(nlp_engine=nlp)
 pii_anonymizer = AnonymizerEngine()
 print("✅ PII Detection Engine (Presidio) Initialized")
 
