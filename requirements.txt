@@ -1,0 +1,23 @@
+# requirements.txt
+
+# Web Framework
+fastapi
+uvicorn
+
+# LangChain / LangGraph
+langchain
+langgraph
+
+# Google AI SDK for Gemini
+google-genai
+
+# Guardrail Libraries
+presidio_analyzer
+presidio_anonymizer
+detoxify
+transformers
+torch
+pandas
+scikit-learn
+sentence-transformers
+spacy==3.7.2
