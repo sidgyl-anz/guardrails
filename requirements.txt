@@ -1,5 +1,3 @@
-# requirements.txt
-
 # Web Framework
 fastapi
 uvicorn
