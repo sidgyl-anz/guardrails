@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from standalone_guardrail import StandaloneGuardrail
-from nodes import GraphState
+from standalone_guardrail import GraphState
 
 # --- Initialize the Guardrails ---
 guardrails = StandaloneGuardrail()

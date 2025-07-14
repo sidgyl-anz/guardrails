@@ -7,6 +7,17 @@ from sentence_transformers import SentenceTransformer
 from detoxify import Detoxify
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
+from typing import TypedDict, List, Dict, Any
+
+class GraphState(TypedDict):
+    prompt_original: str
+    prompt_processed: str
+    llm_response_original: str
+    llm_response_processed: str
+    is_safe: bool
+    blocked_reason: str
+    log: List[str]
+    metrics: Dict[str, Any]
 
 class StandaloneGuardrail:
     def __init__(self, pii_threshold: float = 0.75, toxicity_threshold: float = 0.7, anomaly_threshold: float = -0.05,
