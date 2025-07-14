@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Copy the requirements file and install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 
 # Download the spaCy model required by the guardrails
 RUN python -m spacy download en_core_web_sm

@@ -59,3 +59,7 @@ async def generate_with_guardrails(request: PromptRequest):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail="An internal server error occurred.")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
