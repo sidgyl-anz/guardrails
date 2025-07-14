@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # Import the compiled LangGraph app and the state definition
-from graph import app, GraphState
+from graph import app
+from nodes import GraphState
 
 # --- Pydantic Model for Input ---
 class PromptRequest(BaseModel):
