@@ -18,4 +18,6 @@ torch
 pandas
 scikit-learn
 sentence-transformers
-spacy==3.7.2
+
+# Updated spacy to a version compatible with Pydantic v2, used by FastAPI
+spacy
