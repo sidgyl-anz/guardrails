@@ -1,13 +1,9 @@
 from langgraph.graph import StateGraph, END
-from nodes import (
-    GraphState,
-    check_prompt_injection,
-    check_input_toxicity,
-    anonymize_input_pii,
-    call_llm,
-    validate_output,
-    check_output_toxicity
-)
+from standalone_guardrail import StandaloneGuardrail
+from nodes import GraphState
+
+# --- Initialize the Guardrails ---
+guardrails = StandaloneGuardrail()
 
 # --- Conditional Edge Logic ---
 
@@ -22,12 +18,12 @@ def should_continue(state: GraphState) -> str:
 workflow = StateGraph(GraphState)
 
 # Add the nodes
-workflow.add_node("check_prompt_injection", check_prompt_injection)
-workflow.add_node("check_input_toxicity", check_input_toxicity)
-workflow.add_node("anonymize_input_pii", anonymize_input_pii)
-workflow.add_node("call_llm", call_llm)
-workflow.add_node("validate_output", validate_output)
-workflow.add_node("check_output_toxicity", check_output_toxicity)
+workflow.add_node("check_prompt_injection", guardrails.check_prompt_injection)
+workflow.add_node("check_input_toxicity", guardrails.check_input_toxicity)
+workflow.add_node("anonymize_input_pii", guardrails.anonymize_input_pii)
+workflow.add_node("call_llm", guardrails.call_llm)
+workflow.add_node("validate_output", guardrails.validate_output)
+workflow.add_node("check_output_toxicity", guardrails.check_output_toxicity)
 
 # Define the edges and control flow
 workflow.set_entry_point("check_prompt_injection")

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 # Import the compiled LangGraph app and the state definition
 from graph import app
-from nodes import GraphState
+from standalone_guardrail import GraphState
 
 # --- Pydantic Model for Input ---
 class PromptRequest(BaseModel):
