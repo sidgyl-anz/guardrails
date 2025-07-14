@@ -12,7 +12,7 @@ class PromptRequest(BaseModel):
 fastapi_app = FastAPI(
     title="LangGraph Guardrails API",
     description="An API service that wraps a Gemini LLM with a multi-layered, graph-based security pipeline.",
-    version="3.0.0",
+    version="3.1.0",
 )
 
 @fastapi_app.post("/v3/generate")
@@ -20,7 +20,7 @@ async def generate_with_guardrails(request: PromptRequest):
     """
     Invokes the LangGraph security pipeline with the user's prompt.
     """
-    # Define the initial state for the graph run
+    # Define the initial state for the graph run, including the new metrics field
     initial_state: GraphState = {
         "prompt_original": request.prompt,
         "prompt_processed": request.prompt,
@@ -29,26 +29,29 @@ async def generate_with_guardrails(request: PromptRequest):
         "is_safe": True,
         "blocked_reason": "",
         "log": [],
+        "metrics": {}, # Initialize the metrics dictionary
     }
 
     try:
         # Invoke the graph with the initial state
         final_state = app.invoke(initial_state)
 
-        # If the graph ended in a blocked state, return a 400 error
+        # If the graph ended in a blocked state, return a 400 error with metrics
         if not final_state.get("is_safe"):
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": "Interaction blocked by security guardrail.",
                     "reason": final_state.get("blocked_reason"),
+                    "metrics": final_state.get("metrics"),
                     "log": final_state.get("log"),
                 },
             )
 
-        # If safe, return the final processed response and the execution log
+        # If safe, return the final processed response, the log, and all collected metrics
         return {
             "response": final_state.get("llm_response_processed"),
+            "metrics": final_state.get("metrics"),
             "log": final_state.get("log"),
         }
 
