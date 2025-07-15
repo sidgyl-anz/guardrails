@@ -26,7 +26,7 @@ class StandaloneGuardrail:
 
         # --- Foundational Models (spaCy, SentenceTransformer) ---
         self.nlp = spacy.load("en_core_web_sm")
-        self.sentence_transformer_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.sentence_transformer_model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='./models')
         print("  - spaCy and SentenceTransformer Models Loaded")
 
         # PII Detection & Anonymization (Microsoft Presidio)
