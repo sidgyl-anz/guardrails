@@ -20,4 +20,4 @@ ENV PORT=8080
 ENV GEMINI_API_KEY=""
 
 # Command to run the FastAPI application when the container starts
-CMD ["uvicorn", "main:fastapi_app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
