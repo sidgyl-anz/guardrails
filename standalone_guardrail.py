@@ -422,4 +422,4 @@ class LLMSecurityGuardrails:
         pipeline_status["flags"]["toxicity_input_flagged"] = is_toxic_input
         if is_toxic_input:
             pipeline_status["is_safe"] = False
-            pipeline_status["blocked_reason"].
+            pipeline_status["blocked_reason"] = "Toxic Input Detected"
