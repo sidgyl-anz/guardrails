@@ -13,7 +13,10 @@ google-genai
 # Pinned presidio versions to ensure compatibility with Pydantic v2
 presidio_analyzer==2.2.359
 presidio_anonymizer==2.2.359
+detoxify
 transformers
+torch
 pandas
 scikit-learn
+sentence-transformers
 spacy==3.7.5
