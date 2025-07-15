@@ -24,7 +24,18 @@ from sentence_transformers import SentenceTransformer
 
 # Load models to verify no import errors
 nlp = spacy.load("en_core_web_sm")
-st_model = SentenceTransformer('all-MiniLM-L6-v2')
+for i in range(3):
+    try:
+        st_model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("SentenceTransformer model loaded successfully.")
+        break
+    except Exception as e:
+        if i < 2:
+            print(f"Failed to load SentenceTransformer model, retrying in 5 seconds... (Error: {e})")
+            time.sleep(5)
+        else:
+            print(f"Failed to load SentenceTransformer model after 3 attempts. Error: {e}")
+            raise
 print("All models loaded successfully.")
 
 # --- 3. Define the LLMSecurityGuardrails Class ---
@@ -67,7 +78,18 @@ class LLMSecurityGuardrails:
 
         # Anomaly Detection (Sentence Transformer + Isolation Forest)
         # Using a small, efficient pre-trained model for embeddings
-        self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+        for i in range(3):
+            try:
+                self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+                print("SentenceTransformer model loaded successfully in constructor.")
+                break
+            except Exception as e:
+                if i < 2:
+                    print(f"Failed to load SentenceTransformer model in constructor, retrying in 5 seconds... (Error: {e})")
+                    time.sleep(5)
+                else:
+                    print(f"Failed to load SentenceTransformer model in constructor after 3 attempts. Error: {e}")
+                    raise
         self.anomaly_detector = IsolationForest(random_state=42, contamination='auto')
         self.scaler = StandardScaler()
         self.anomaly_threshold = anomaly_threshold
