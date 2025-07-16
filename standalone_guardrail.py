@@ -173,26 +173,39 @@ class LLMSecurityGuardrails:
         print("  - Anomaly Detector training complete.")
 
 
+
     def _detect_pii(self, text: str) -> tuple[str, list[RecognizerResult], bool]:
         """
         Detects and anonymizes PII (Personally Identifiable Information) in the given text using Microsoft Presidio.
-
+        Excludes entities of type 'CITY' from being flagged or anonymized.
+    
         Args:
             text (str): The input text to scan for PII.
-
+    
         Returns:
             tuple[str, list[RecognizerResult], bool]: A tuple containing:
                 - anonymized_text (str): The text with detected PII replaced by entity types (e.g., <PERSON>, <EMAIL_ADDRESS>).
-                - analysis_results (list[RecognizerResult]): A list of Presidio RecognizerResult objects detailing the detected entities.
-                - pii_detected (bool): A boolean indicating whether any PII was detected above the configured threshold.
+                - analysis_results (list[RecognizerResult]): A list of Presidio RecognizerResult objects detailing the detected entities (excluding CITY).
+                - pii_detected (bool): A boolean indicating whether any PII (excluding CITY) was detected.
         """
-        analysis_results = self.analyzer.analyze(text=text, language='en',
-                                                  score_threshold=self.pii_threshold)
-        pii_detected = len(analysis_results) > 0
-        anonymized_text_result = self.anonymizer.anonymize(text=text,
-                                                            analyzer_results=analysis_results)
-        return anonymized_text_result.text, analysis_results, pii_detected
+        analysis_results = self.analyzer.analyze(
+            text=text,
+            language='en',
+            score_threshold=self.pii_threshold
+        )
+    
+        # Exclude 'CITY' entities from detection and anonymization
+        filtered_results = [r for r in analysis_results if r.entity_type != "CITY"]
+        pii_detected = len(filtered_results) > 0
+    
+        # Anonymize using only the filtered results
+        anonymized_text_result = self.anonymizer.anonymize(
+            text=text,
+            analyzer_results=filtered_results
+        )
 
+    return anonymized_text_result.text, filtered_results, pii_detected
+    
     def _detect_toxicity(self, text: str) -> tuple[dict, bool]:
         """
         Detects various forms of toxicity (e.g., toxicity, insult, threat) in the given text using Detoxify.
