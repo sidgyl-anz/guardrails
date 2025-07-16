@@ -447,3 +447,95 @@ class LLMSecurityGuardrails:
         if is_toxic_input:
             pipeline_status["is_safe"] = False
             pipeline_status["blocked_reason"] = "Toxic Input Detected"
+            self._log_behavior({"event_type": "input_blocked", "reason": "toxicity"})
+            print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
+            return self._convert_numpy_to_python_types(pipeline_status)
+
+        # --- 3. Input PII Detection ---
+        anonymized_prompt, pii_results_input, pii_detected_input = self._detect_pii(pipeline_status["prompt_processed"])
+        pipeline_status["prompt_processed"] = anonymized_prompt
+        pipeline_status["flags"]["pii_input_detected"] = pii_detected_input
+        pipeline_status["flags"]["pii_input_details"] = [r.to_dict() for r in pii_results_input]
+        if pii_detected_input:
+            self._log_behavior({"event_type": "pii_detected_input", "pii_results": pipeline_status["flags"]["pii_input_details"]})
+            print(f"  Detected PII in prompt. Anonymized prompt: '{anonymized_prompt}'")
+
+        # --- 4. Input Anomaly Detection ---
+        anomaly_results_input, is_anomalous_input = self._detect_anomaly(pipeline_status["prompt_processed"], "prompt")
+        pipeline_status["flags"]["anomaly_input_details"] = anomaly_results_input
+        pipeline_status["flags"]["anomaly_input_flagged"] = is_anomalous_input
+        if is_anomalous_input:
+            pipeline_status["is_safe"] = False
+            pipeline_status["blocked_reason"] = "Anomalous Input Detected"
+            self._log_behavior({"event_type": "input_blocked", "reason": "anomaly"})
+            print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
+            return self._convert_numpy_to_python_types(pipeline_status)
+
+        # --- 5. Simulate LLM Response ---
+        if llm_response_simulator_func:
+            llm_response = llm_response_simulator_func(pipeline_status["prompt_processed"])
+        else:
+            llm_response = "This is a default response from the LLM."
+        pipeline_status["llm_response_original"] = llm_response
+        pipeline_status["llm_response_processed"] = llm_response
+        self._log_behavior({"event_type": "llm_response_generated", "response_original": llm_response})
+        print(f"Original LLM Response: '{llm_response}'")
+
+
+        # --- 6. Output PII Detection ---
+        anonymized_response, pii_results_output, pii_detected_output = self._detect_pii(pipeline_status["llm_response_processed"])
+        pipeline_status["llm_response_processed"] = anonymized_response
+        pipeline_status["flags"]["pii_output_detected"] = pii_detected_output
+        pipeline_status["flags"]["pii_output_details"] = [r.to_dict() for r in pii_results_output]
+        if pii_detected_output:
+            self._log_behavior({"event_type": "pii_detected_output", "pii_results": pipeline_status["flags"]["pii_output_details"]})
+            print(f"  Detected PII in response. Anonymized response: '{anonymized_response}'")
+
+
+        # --- 7. Output Content Moderation (Toxicity) ---
+        toxicity_scores_output, is_toxic_output = self._detect_toxicity(pipeline_status["llm_response_processed"])
+        pipeline_status["flags"]["toxicity_output_scores"] = toxicity_scores_output
+        pipeline_status["flags"]["toxicity_output_flagged"] = is_toxic_output
+        if is_toxic_output:
+            pipeline_status["is_safe"] = False
+            pipeline_status["blocked_reason"] = "Toxic Output Detected"
+            self._log_behavior({"event_type": "output_blocked", "reason": "toxicity"})
+            print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
+            return self._convert_numpy_to_python_types(pipeline_status)
+
+
+        # --- 8. Output Validation ---
+        validated_response, is_valid_output, validation_message = self._validate_output_format(pipeline_status["llm_response_processed"])
+        pipeline_status["llm_response_processed"] = validated_response
+        pipeline_status["flags"]["output_format_valid"] = is_valid_output
+        pipeline_status["flags"]["output_format_validation_message"] = validation_message
+        if not is_valid_output:
+            pipeline_status["is_safe"] = False
+            pipeline_status["blocked_reason"] = validation_message
+            self._log_behavior({"event_type": "output_blocked", "reason": "invalid_format"})
+            print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
+            return self._convert_numpy_to_python_types(pipeline_status)
+
+        # --- 9. Output Anomaly Detection ---
+        anomaly_results_output, is_anomalous_output = self._detect_anomaly(pipeline_status["llm_response_processed"], "response")
+        pipeline_status["flags"]["anomaly_output_details"] = anomaly_results_output
+        pipeline_status["flags"]["anomaly_output_flagged"] = is_anomalous_output
+        if is_anomalous_output:
+            pipeline_status["is_safe"] = False
+            pipeline_status["blocked_reason"] = "Anomalous Output Detected"
+            self._log_behavior({"event_type": "output_blocked", "reason": "anomaly"})
+            print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
+            return self._convert_numpy_to_python_types(pipeline_status)
+
+
+        # --- 10. Final Logging and Return ---
+        final_log_entry = {
+            "event_type": "interaction_complete",
+            "final_status": "safe" if pipeline_status["is_safe"] else "blocked",
+            "final_prompt": pipeline_status["prompt_processed"],
+            "final_response": pipeline_status["llm_response_processed"]
+        }
+        self._log_behavior(final_log_entry)
+        pipeline_status["logs"] = self.log_buffer # Add the full log buffer to the final output
+        print(f"--- Interaction Processing Complete. Final Status: {'Safe' if pipeline_status['is_safe'] else 'Blocked'} ---")
+        return self._convert_numpy_to_python_types(pipeline_status)
