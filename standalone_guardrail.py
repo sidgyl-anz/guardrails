@@ -204,7 +204,7 @@ class LLMSecurityGuardrails:
             analyzer_results=filtered_results
         )
 
-    return anonymized_text_result.text, filtered_results, pii_detected
+        return anonymized_text_result.text, filtered_results, pii_detected
     
     def _detect_toxicity(self, text: str) -> tuple[dict, bool]:
         """
