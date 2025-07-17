@@ -83,12 +83,40 @@ The API is exposed at the `/process` endpoint. It accepts a `POST` request with 
 
 **Request Body:**
 
-```json
-{
-  "user_prompt": "What is the capital of France?",
-  "llm_response": "The capital of France is Paris."
-}
-```
+The API now supports three types of requests:
+
+*   **Request and Response:**
+
+    ```json
+    {
+      "user_prompt": "What is the capital of France?",
+      "llm_response": "The capital of France is Paris."
+    }
+    ```
+
+*   **Request Only:**
+
+    ```json
+    {
+      "user_prompt": "What is the capital of France?"
+    }
+    ```
+
+*   **Response Only:**
+
+    ```json
+    {
+      "llm_response": "The capital of France is Paris."
+    }
+    ```
+
+### Why this is useful
+
+This new flexible API design allows for more granular control over the guardrail system. For example, you might want to:
+
+*   **Pre-screen user prompts:** Before sending a prompt to the LLM, you can use the request-only endpoint to check for prompt injection attacks, PII, or toxic content.
+*   **Post-process LLM responses:** After receiving a response from the LLM, you can use the response-only endpoint to check for PII, toxic content, or other issues.
+*   **Analyze existing interactions:** You can use the request-and-response endpoint to analyze existing conversations for security and quality issues.
 
 **Response Body:**
 
