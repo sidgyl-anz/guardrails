@@ -401,49 +401,28 @@ class LLMSecurityGuardrails:
         # For other primitive types (str, int, float, bool), they are already JSON serializable
         return obj
 
-    def process_llm_interaction(self, user_prompt: str, llm_response_simulator_func=None) -> dict:
+    def process_prompt(self, user_prompt: str) -> dict:
         """
-        Orchestrates the end-to-end guardrail pipeline for an LLM interaction.
-
-        Processes a user prompt through a series of input guardrails (prompt injection,
-        toxicity, PII, anomaly detection). If the input passes, it simulates an LLM
-        response (or calls a provided simulator function), and then processes the
-        LLM response through output guardrails (PII, toxicity, validation, anomaly detection).
-        Logs each step and decision.
-
-        Args:
-            user_prompt (str): The raw user input prompt.
-            llm_response_simulator_func (callable, optional): A function that simulates
-                an LLM's response. It should take the (guarded) prompt as input and
-                return a string. If None, a default dummy response is used.
-
-        Returns:
-            dict: A dictionary containing the processing results, including flags for
-                  each guardrail check, the final processed response, and a boolean
-                  `is_safe` indicating if the interaction was blocked or flagged.
+        Processes a user prompt through a series of input guardrails.
         """
-        print(f"\n--- Processing New Interaction ---")
+        print(f"\n--- Processing User Prompt ---")
         print(f"Initial User Prompt: '{user_prompt}'")
         pipeline_status = {
             "prompt_original": user_prompt,
             "prompt_processed": user_prompt,
-            "llm_response_original": None,
-            "llm_response_processed": None,
             "is_safe": True,
             "blocked_reason": None,
             "flags": {},
             "logs": []
         }
         initial_log_entry = {
-            "event_type": "interaction_start",
+            "event_type": "prompt_processing_start",
             "prompt_original": user_prompt,
-            "user_id": "demo_user_123" # Example user ID
+            "user_id": "demo_user_123"
         }
         self._log_behavior(initial_log_entry)
 
-
-        # --- 1. Input Guardrails (Prompt Injection/Jailbreak) ---
-        # NOTE: The _filter_prompt_injection method now includes semantic similarity
+        # Input Guardrails
         processed_prompt_pi, is_injection = self._filter_prompt_injection(pipeline_status["prompt_processed"])
         pipeline_status["prompt_processed"] = processed_prompt_pi
         pipeline_status["flags"]["prompt_injection_flagged"] = is_injection
@@ -454,7 +433,6 @@ class LLMSecurityGuardrails:
             print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
             return self._convert_numpy_to_python_types(pipeline_status)
 
-        # --- 2. Input Content Moderation (Toxicity) ---
         toxicity_scores_input, is_toxic_input = self._detect_toxicity(pipeline_status["prompt_processed"])
         pipeline_status["flags"]["toxicity_input_scores"] = toxicity_scores_input
         pipeline_status["flags"]["toxicity_input_flagged"] = is_toxic_input
@@ -465,7 +443,6 @@ class LLMSecurityGuardrails:
             print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
             return self._convert_numpy_to_python_types(pipeline_status)
 
-        # --- 3. Input PII Detection ---
         anonymized_prompt, pii_results_input, pii_detected_input = self._detect_pii(pipeline_status["prompt_processed"])
         pipeline_status["prompt_processed"] = anonymized_prompt
         pipeline_status["flags"]["pii_input_detected"] = pii_detected_input
@@ -474,7 +451,6 @@ class LLMSecurityGuardrails:
             self._log_behavior({"event_type": "pii_detected_input", "pii_results": pipeline_status["flags"]["pii_input_details"]})
             print(f"  Detected PII in prompt. Anonymized prompt: '{anonymized_prompt}'")
 
-        # --- 4. Input Anomaly Detection ---
         anomaly_results_input, is_anomalous_input = self._detect_anomaly(pipeline_status["prompt_processed"], "prompt")
         pipeline_status["flags"]["anomaly_input_details"] = anomaly_results_input
         pipeline_status["flags"]["anomaly_input_flagged"] = is_anomalous_input
@@ -485,18 +461,37 @@ class LLMSecurityGuardrails:
             print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
             return self._convert_numpy_to_python_types(pipeline_status)
 
-        # --- 5. Simulate LLM Response ---
-        if llm_response_simulator_func:
-            llm_response = llm_response_simulator_func(pipeline_status["prompt_processed"])
-        else:
-            llm_response = "This is a default response from the LLM."
-        pipeline_status["llm_response_original"] = llm_response
-        pipeline_status["llm_response_processed"] = llm_response
-        self._log_behavior({"event_type": "llm_response_generated", "response_original": llm_response})
-        print(f"Original LLM Response: '{llm_response}'")
+        final_log_entry = {
+            "event_type": "prompt_processing_complete",
+            "final_status": "safe" if pipeline_status["is_safe"] else "blocked",
+            "final_prompt": pipeline_status["prompt_processed"]
+        }
+        self._log_behavior(final_log_entry)
+        pipeline_status["logs"] = self.log_buffer
+        print(f"--- Prompt Processing Complete. Final Status: {'Safe' if pipeline_status['is_safe'] else 'Blocked'} ---")
+        return self._convert_numpy_to_python_types(pipeline_status)
 
+    def process_response(self, llm_response: str) -> dict:
+        """
+        Processes an LLM response through a series of output guardrails.
+        """
+        print(f"\n--- Processing LLM Response ---")
+        print(f"Initial LLM Response: '{llm_response}'")
+        pipeline_status = {
+            "llm_response_original": llm_response,
+            "llm_response_processed": llm_response,
+            "is_safe": True,
+            "blocked_reason": None,
+            "flags": {},
+            "logs": []
+        }
+        initial_log_entry = {
+            "event_type": "response_processing_start",
+            "response_original": llm_response
+        }
+        self._log_behavior(initial_log_entry)
 
-        # --- 6. Output PII Detection ---
+        # Output Guardrails
         anonymized_response, pii_results_output, pii_detected_output = self._detect_pii(pipeline_status["llm_response_processed"])
         pipeline_status["llm_response_processed"] = anonymized_response
         pipeline_status["flags"]["pii_output_detected"] = pii_detected_output
@@ -505,8 +500,6 @@ class LLMSecurityGuardrails:
             self._log_behavior({"event_type": "pii_detected_output", "pii_results": pipeline_status["flags"]["pii_output_details"]})
             print(f"  Detected PII in response. Anonymized response: '{anonymized_response}'")
 
-
-        # --- 7. Output Content Moderation (Toxicity) ---
         toxicity_scores_output, is_toxic_output = self._detect_toxicity(pipeline_status["llm_response_processed"])
         pipeline_status["flags"]["toxicity_output_scores"] = toxicity_scores_output
         pipeline_status["flags"]["toxicity_output_flagged"] = is_toxic_output
@@ -517,8 +510,6 @@ class LLMSecurityGuardrails:
             print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
             return self._convert_numpy_to_python_types(pipeline_status)
 
-
-        # --- 8. Output Validation ---
         validated_response, is_valid_output, validation_message = self._validate_output_format(pipeline_status["llm_response_processed"])
         pipeline_status["llm_response_processed"] = validated_response
         pipeline_status["flags"]["output_format_valid"] = is_valid_output
@@ -530,7 +521,6 @@ class LLMSecurityGuardrails:
             print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
             return self._convert_numpy_to_python_types(pipeline_status)
 
-        # --- 9. Output Anomaly Detection ---
         anomaly_results_output, is_anomalous_output = self._detect_anomaly(pipeline_status["llm_response_processed"], "response")
         pipeline_status["flags"]["anomaly_output_details"] = anomaly_results_output
         pipeline_status["flags"]["anomaly_output_flagged"] = is_anomalous_output
@@ -541,15 +531,36 @@ class LLMSecurityGuardrails:
             print(f"  🚨 BLOCKING: {pipeline_status['blocked_reason']}")
             return self._convert_numpy_to_python_types(pipeline_status)
 
-
-        # --- 10. Final Logging and Return ---
         final_log_entry = {
-            "event_type": "interaction_complete",
+            "event_type": "response_processing_complete",
             "final_status": "safe" if pipeline_status["is_safe"] else "blocked",
-            "final_prompt": pipeline_status["prompt_processed"],
             "final_response": pipeline_status["llm_response_processed"]
         }
         self._log_behavior(final_log_entry)
-        pipeline_status["logs"] = self.log_buffer # Add the full log buffer to the final output
-        print(f"--- Interaction Processing Complete. Final Status: {'Safe' if pipeline_status['is_safe'] else 'Blocked'} ---")
+        pipeline_status["logs"] = self.log_buffer
+        print(f"--- Response Processing Complete. Final Status: {'Safe' if pipeline_status['is_safe'] else 'Blocked'} ---")
         return self._convert_numpy_to_python_types(pipeline_status)
+
+    def process_llm_interaction(self, user_prompt: str, llm_response_simulator_func) -> dict:
+        """
+        Orchestrates the end-to-end guardrail pipeline for a full LLM interaction.
+        """
+        prompt_result = self.process_prompt(user_prompt)
+        if not prompt_result["is_safe"]:
+            return prompt_result
+
+        llm_response = llm_response_simulator_func(prompt_result["prompt_processed"])
+        response_result = self.process_response(llm_response)
+
+        # Combine results
+        combined_result = {
+            "prompt_original": user_prompt,
+            "prompt_processed": prompt_result["prompt_processed"],
+            "llm_response_original": llm_response,
+            "llm_response_processed": response_result["llm_response_processed"],
+            "is_safe": response_result["is_safe"],
+            "blocked_reason": response_result["blocked_reason"],
+            "flags": {**prompt_result["flags"], **response_result["flags"]},
+            "logs": self.log_buffer
+        }
+        return self._convert_numpy_to_python_types(combined_result)
