@@ -53,5 +53,12 @@ class TestGuardrail(unittest.TestCase):
         self.assertFalse(result['is_safe'])
         self.assertEqual(result['blocked_reason'], 'Toxic Output Detected')
 
+    def test_interaction_safe_prompt_unsafe_response(self):
+        prompt = "This is a safe prompt."
+        response = "This is a toxic response, you idiot."
+        result = self.guardrails.process_llm_interaction(prompt, lambda p: response)
+        self.assertFalse(result['is_safe'])
+        self.assertEqual(result['blocked_reason'], 'Toxic Output Detected')
+
 if __name__ == '__main__':
     unittest.main()
