@@ -558,8 +558,8 @@ class LLMSecurityGuardrails:
             "prompt_processed": prompt_result["prompt_processed"],
             "llm_response_original": llm_response,
             "llm_response_processed": response_result["llm_response_processed"],
-            "is_safe": response_result["is_safe"],
-            "blocked_reason": response_result["blocked_reason"],
+            "is_safe": prompt_result["is_safe"] and response_result["is_safe"],
+            "blocked_reason": prompt_result["blocked_reason"] or response_result["blocked_reason"],
             "flags": {**prompt_result["flags"], **response_result["flags"]},
             "logs": self.log_buffer
         }
