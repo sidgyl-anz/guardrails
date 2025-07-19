@@ -9,7 +9,15 @@ import numpy as np
 # PII Detection & Anonymization
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
-from presidio_analyzer.recognizer_result import RecognizerResult # Import specifically
+from presidio_analyzer.recognizer_result import RecognizerResult  # Import specifically
+
+# LLM Guard for prompt injection checks
+try:
+    from llm_guard import scan_prompt
+    from llm_guard.input_scanners import PromptInjection
+except Exception:  # pragma: no cover - library may not be installed
+    scan_prompt = None
+    PromptInjection = None
 
 # Toxicity Detection
 from detoxify import Detoxify
@@ -78,6 +86,14 @@ class LLMSecurityGuardrails:
         self.toxicity_threshold = toxicity_threshold
         print("  - Toxicity Detection (Detoxify) initialized.")
 
+        # LLM Guard setup (optional)
+        if PromptInjection and scan_prompt:
+            self.llmguard_prompt_scanner = PromptInjection()
+            print("  - LLM Guard PromptInjection scanner initialized.")
+        else:
+            self.llmguard_prompt_scanner = None
+            print("  - LLM Guard not available; falling back to regex checks.")
+
         # Anomaly Detection (Sentence Transformer + Isolation Forest)
         # Using a small, efficient pre-trained model for embeddings
         for i in range(3):
@@ -125,7 +141,7 @@ class LLMSecurityGuardrails:
         ]
         self.malicious_embeddings = self.sentence_model.encode(self.known_malicious_prompts)
         self.semantic_injection_threshold = semantic_injection_threshold
-        print("  - Prompt Injection (Keyword/Regex + Semantic Similarity) initialized.")
+        print("  - Prompt Injection (LLM Guard with regex/semantic fallback) initialized.")
 
         # Output Validation (Enhanced with Hallucination Keywords & Canary Trap)
         self.hallucination_keywords = ["invented fact", "fabricated data", "incorrect statement", "false information", "not found in real data"]
@@ -245,18 +261,28 @@ class LLMSecurityGuardrails:
                 - is_injection (bool): A boolean indicating whether the prompt is flagged as a potential injection/jailbreak attempt.
         """
         print("  [Guardrail] Running Prompt Injection Detection...")
+
+        # Prefer LLM Guard if available
+        if self.llmguard_prompt_scanner:
+            sanitized_prompt, results_valid, _ = scan_prompt(
+                [self.llmguard_prompt_scanner], prompt
+            )
+            is_injection = not all(results_valid.values())
+            if is_injection:
+                print("  🚨 Prompt Injection detected by LLM Guard")
+            return sanitized_prompt, is_injection
+
+        # Fallback to regex and semantic similarity
         is_injection = False
         reason = []
 
-        # 1. Keyword/Regex Check (Fast & Cheap First Pass)
         for pattern in self.injection_patterns:
             if pattern.search(prompt):
                 is_injection = True
                 reason.append(f"Keyword/Regex: '{pattern.pattern}' detected.")
                 break
 
-        # 2. Semantic Similarity Check (More Robust)
-        if not is_injection: # Only run if not already flagged by keywords
+        if not is_injection:
             user_embedding = self.sentence_model.encode(prompt).reshape(1, -1)
             similarities = cosine_similarity(user_embedding, self.malicious_embeddings)[0]
             max_similarity = np.max(similarities)
@@ -264,7 +290,9 @@ class LLMSecurityGuardrails:
             if max_similarity > self.semantic_injection_threshold:
                 is_injection = True
                 most_similar_malicious_prompt = self.known_malicious_prompts[np.argmax(similarities)]
-                reason.append(f"Semantic Similarity: {max_similarity:.2f} to '{most_similar_malicious_prompt}'")
+                reason.append(
+                    f"Semantic Similarity: {max_similarity:.2f} to '{most_similar_malicious_prompt}'"
+                )
 
         if is_injection:
             print(f"  🚨 Prompt Injection/Jailbreak detected! Reasons: {'; '.join(reason)}")
