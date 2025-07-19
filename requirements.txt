@@ -20,3 +20,4 @@ pandas
 scikit-learn
 sentence-transformers
 spacy==3.7.5
+llm-guard
