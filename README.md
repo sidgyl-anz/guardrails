@@ -31,11 +31,11 @@ The security guardrails pipeline is implemented in the `LLMSecurityGuardrails` c
 
 The pipeline is composed of the following guardrails:
 
-*   **Prompt Injection Detection:** This guardrail uses a combination of regular expressions and semantic similarity to detect and block prompt injection attacks.
+*   **Prompt Injection Detection:** This guardrail now leverages the `llm-guard` library's `PromptInjection` scanner to detect and block prompt injection attacks.
 *   **PII (Personally Identifiable Information) Detection and Anonymization:** This guardrail uses the Microsoft Presidio library to detect and anonymize PII in both the user prompt and the LLM response.
 *   **Toxicity Detection:** This guardrail uses the Detoxify library to detect and block toxic content in both the user prompt and the LLM response.
 *   **Output Validation:** This guardrail performs a series of checks on the LLM response, including JSON schema validation and hallucination detection.
-*   **Anomaly Detection:** This guardrail uses a machine learning model to detect anomalous interactions that may indicate a novel attack or a problem with the LLM.
+*   **Anomaly Detection:** This guardrail now relies on LLM Guard's `Relevance` scanner to flag off-topic or unrelated responses.
 
 ## 3. Implementation Details
 
@@ -43,11 +43,7 @@ This section provides a detailed overview of the implementation of each of the s
 
 ### 3.1. Prompt Injection Detection
 
-The prompt injection detection guardrail is implemented in the `_filter_prompt_injection` method. It uses a two-stage approach to detect prompt injection attacks.
-
-First, it checks the prompt against a list of known injection patterns using regular expressions. This is a fast and efficient way to block common attacks.
-
-Second, it uses a semantic similarity model to compare the prompt to a list of known malicious prompts. This allows the system to detect novel attacks that may not be caught by the regular expression filter.
+The prompt injection detection guardrail is implemented in the `_filter_prompt_injection` method and now relies on the `llm-guard` library. The `PromptInjection` scanner is invoked to evaluate each user prompt. If `llm-guard` is not available, the system falls back to simple keyword and regex checks.
 
 ### 3.2. PII Detection and Anonymization
 
@@ -73,9 +69,7 @@ The checks include:
 
 ### 3.5. Anomaly Detection
 
-The anomaly detection guardrail is implemented in the `_detect_anomaly` method. It uses an Isolation Forest model to detect anomalous interactions.
-
-The model is trained on a dataset of normal interactions, and it learns to identify interactions that are significantly different from the norm. This allows the system to detect novel attacks that may not be caught by the other guardrails.
+The anomaly detection guardrail is implemented in the `_detect_anomaly` method. Instead of a custom model, it now leverages the `Relevance` scanner from `llm-guard` to check whether the LLM response is on-topic with respect to the original prompt. Responses deemed irrelevant are flagged as anomalous.
 
 ## 4. How to Use the API
 
