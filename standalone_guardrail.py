@@ -51,33 +51,25 @@ class LLMSecurityGuardrails:
         """
         print("Initializing LLM Security Guardrails...")
 
-        # PII Detection & Anonymization (Microsoft Presidio)
-        self.analyzer = AnalyzerEngine()
-        self.anonymizer = AnonymizerEngine()
+        # PII Detection & Anonymization (Microsoft Presidio) - Lazy Loaded
+        self.analyzer = None
+        self.anonymizer = None
         self.pii_threshold = pii_threshold
-        print("  - PII Detection (Presidio) initialized.")
+        print("  - PII Detection (Presidio) will be lazy-loaded.")
 
-        # Toxicity Detection (Detoxify)
-        self.detoxify_model = Detoxify('unbiased')
+        # Toxicity Detection (Detoxify) - Lazy Loaded
+        self.detoxify_model = None
         self.toxicity_threshold = toxicity_threshold
-        print("  - Toxicity Detection (Detoxify) initialized.")
+        print("  - Toxicity Detection (Detoxify) will be lazy-loaded.")
 
-        # LLM Guard setup (optional)
-        if PromptInjection and scan_prompt:
-            self.llmguard_prompt_scanner = PromptInjection()
-            print("  - LLM Guard PromptInjection scanner initialized.")
-        else:
-            self.llmguard_prompt_scanner = None
-            print("  - LLM Guard not available; falling back to regex checks.")
+        # LLM Guard setup (optional) - Lazy Loaded
+        self.llmguard_prompt_scanner = None
+        print("  - LLM Guard PromptInjection scanner will be lazy-loaded.")
 
 
-        # Output Relevance Detection (LLM Guard)
-        if Relevance:
-            self.relevance_scanner = Relevance(threshold=0.5)
-            print("  - LLM Guard Relevance scanner initialized.")
-        else:
-            self.relevance_scanner = None
-            print("  - Relevance scanner unavailable; anomaly detection disabled.")
+        # Output Relevance Detection (LLM Guard) - Lazy Loaded
+        self.relevance_scanner = None
+        print("  - LLM Guard Relevance scanner will be lazy-loaded.")
 
 
         # Prompt Injection/Jailbreak Detection (Enhanced with Semantic Similarity)
@@ -109,6 +101,40 @@ class LLMSecurityGuardrails:
         self.log_buffer = []
         print("Guardrails initialization complete.")
 
+    def _get_analyzer(self):
+        if self.analyzer is None:
+            print("  - Lazily loading PII Detection (Presidio Analyzer)...")
+            self.analyzer = AnalyzerEngine()
+            print("  - PII Detection (Presidio Analyzer) loaded.")
+        return self.analyzer
+
+    def _get_anonymizer(self):
+        if self.anonymizer is None:
+            print("  - Lazily loading PII Detection (Presidio Anonymizer)...")
+            self.anonymizer = AnonymizerEngine()
+            print("  - PII Detection (Presidio Anonymizer) loaded.")
+        return self.anonymizer
+
+    def _get_detoxify_model(self):
+        if self.detoxify_model is None:
+            print("  - Lazily loading Toxicity Detection (Detoxify)...")
+            self.detoxify_model = Detoxify('unbiased')
+            print("  - Toxicity Detection (Detoxify) loaded.")
+        return self.detoxify_model
+
+    def _get_llmguard_prompt_scanner(self):
+        if self.llmguard_prompt_scanner is None and PromptInjection and scan_prompt:
+            print("  - Lazily loading LLM Guard PromptInjection scanner...")
+            self.llmguard_prompt_scanner = PromptInjection()
+            print("  - LLM Guard PromptInjection scanner loaded.")
+        return self.llmguard_prompt_scanner
+
+    def _get_relevance_scanner(self):
+        if self.relevance_scanner is None and Relevance:
+            print("  - Lazily loading LLM Guard Relevance scanner...")
+            self.relevance_scanner = Relevance(threshold=0.5)
+            print("  - LLM Guard Relevance scanner loaded.")
+        return self.relevance_scanner
 
     def _detect_pii(self, text: str) -> tuple[str, list[RecognizerResult], bool]:
         """
@@ -124,7 +150,9 @@ class LLMSecurityGuardrails:
                 - filtered_results (list[RecognizerResult]): List of recognized entities excluding CITY and LOCATION.
                 - pii_detected (bool): True if any PII (excluding CITY and LOCATION) was found.
         """
-        analysis_results = self.analyzer.analyze(
+        analyzer = self._get_analyzer()
+        anonymizer = self._get_anonymizer()
+        analysis_results = analyzer.analyze(
             text=text,
             language='en',
             score_threshold=self.pii_threshold
@@ -135,7 +163,7 @@ class LLMSecurityGuardrails:
         filtered_results = [r for r in analysis_results if r.entity_type not in excluded_entities]
         pii_detected = len(filtered_results) > 0
     
-        anonymized_text_result = self.anonymizer.anonymize(
+        anonymized_text_result = anonymizer.anonymize(
             text=text,
             analyzer_results=filtered_results
         )
@@ -155,7 +183,8 @@ class LLMSecurityGuardrails:
                 - toxicity_scores (dict): A dictionary of toxicity scores for different categories.
                 - is_toxic (bool): A boolean indicating whether any toxicity score exceeds the configured threshold.
         """
-        toxicity_scores = self.detoxify_model.predict(text)
+        detoxify_model = self._get_detoxify_model()
+        toxicity_scores = detoxify_model.predict(text)
         # Flag if any score (excluding specific non-toxicity categories) exceeds the threshold
         is_toxic = (toxicity_scores.get('toxicity', 0) > self.toxicity_threshold or
                     toxicity_scores.get('severe_toxicity', 0) > self.toxicity_threshold or
@@ -181,11 +210,12 @@ class LLMSecurityGuardrails:
                 - is_injection (bool): A boolean indicating whether the prompt is flagged as a potential injection/jailbreak attempt.
         """
         print("  [Guardrail] Running Prompt Injection Detection...")
+        llmguard_prompt_scanner = self._get_llmguard_prompt_scanner()
 
         # Prefer LLM Guard if available
-        if self.llmguard_prompt_scanner:
+        if llmguard_prompt_scanner:
             sanitized_prompt, results_valid, _ = scan_prompt(
-                [self.llmguard_prompt_scanner], prompt
+                [llmguard_prompt_scanner], prompt
             )
             is_injection = not all(results_valid.values())
             if is_injection:
@@ -264,9 +294,10 @@ class LLMSecurityGuardrails:
     def _detect_anomaly(self, prompt: str | None, response: str) -> tuple[str, dict, bool]:
         """Check response relevance using the LLM Guard `Relevance` scanner."""
         print("  [Guardrail] Running Relevance check...")
-        if not prompt or not self.relevance_scanner:
+        relevance_scanner = self._get_relevance_scanner()
+        if not prompt or not relevance_scanner:
             return response, {"score": 0.0}, False
-        sanitized_output, is_valid, risk_score = self.relevance_scanner.scan(prompt, response)
+        sanitized_output, is_valid, risk_score = relevance_scanner.scan(prompt, response)
         is_anomalous = not is_valid
         if is_anomalous:
             print(f"  ⚠️ Low relevance detected! Score: {risk_score:.2f}")
