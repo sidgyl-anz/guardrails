@@ -70,6 +70,7 @@ class LLMSecurityGuardrails:
             self.llmguard_prompt_scanner = None
             print("  - LLM Guard not available; falling back to regex checks.")
 
+
         # Output Relevance Detection (LLM Guard)
         if Relevance:
             self.relevance_scanner = Relevance(threshold=0.5)
@@ -94,7 +95,9 @@ class LLMSecurityGuardrails:
             re.compile(r"tell\s+me\s+your\s+rules", re.IGNORECASE),
             re.compile(r"expose\s+internal\s+data", re.IGNORECASE),
         ]
+
         print("  - Prompt Injection (LLM Guard with regex fallback) initialized.")
+
 
         # Output Validation (Enhanced with Hallucination Keywords & Canary Trap)
         self.hallucination_keywords = ["invented fact", "fabricated data", "incorrect statement", "false information", "not found in real data"]
@@ -190,6 +193,7 @@ class LLMSecurityGuardrails:
             return sanitized_prompt, is_injection
 
         # Fallback to regex patterns
+
         is_injection = False
         reason = []
 

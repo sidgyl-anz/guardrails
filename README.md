@@ -45,6 +45,7 @@ This section provides a detailed overview of the implementation of each of the s
 
 The prompt injection detection guardrail is implemented in the `_filter_prompt_injection` method and now relies on the `llm-guard` library. The `PromptInjection` scanner is invoked to evaluate each user prompt. If `llm-guard` is not available, the system falls back to simple keyword and regex checks.
 
+
 ### 3.2. PII Detection and Anonymization
 
 The PII detection and anonymization guardrail is implemented in the `_detect_pii` method. It uses the Microsoft Presidio library to detect and anonymize a wide range of PII, including names, email addresses, phone numbers, and credit card numbers.
