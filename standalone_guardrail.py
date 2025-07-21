@@ -376,6 +376,10 @@ class LLMSecurityGuardrails:
         # For a real system, you might send this to a Kafka topic or directly to a logging service.
         # print(f"  [Log] Event logged: {log_entry['event_type']}") # Comment out for cleaner main output
 
+    def _clear_log_buffer(self):
+        """Clears the in-memory log buffer."""
+        self.log_buffer = []
+
     def _convert_numpy_to_python_types(self, obj):
         """
         Recursively converts NumPy types (like float32, bool_) to standard Python types
@@ -405,6 +409,7 @@ class LLMSecurityGuardrails:
         """
         Processes a user prompt through a series of input guardrails.
         """
+        self._clear_log_buffer()
         print(f"\n--- Processing User Prompt ---")
         print(f"Initial User Prompt: '{user_prompt}'")
         pipeline_status = {
@@ -467,7 +472,7 @@ class LLMSecurityGuardrails:
             "final_prompt": pipeline_status["prompt_processed"]
         }
         self._log_behavior(final_log_entry)
-        pipeline_status["logs"] = self.log_buffer
+        pipeline_status["logs"] = self.log_buffer.copy()
         print(f"--- Prompt Processing Complete. Final Status: {'Safe' if pipeline_status['is_safe'] else 'Blocked'} ---")
         return self._convert_numpy_to_python_types(pipeline_status)
 
@@ -475,6 +480,7 @@ class LLMSecurityGuardrails:
         """
         Processes an LLM response through a series of output guardrails.
         """
+        self._clear_log_buffer()
         print(f"\n--- Processing LLM Response ---")
         print(f"Initial LLM Response: '{llm_response}'")
         pipeline_status = {
@@ -537,7 +543,7 @@ class LLMSecurityGuardrails:
             "final_response": pipeline_status["llm_response_processed"]
         }
         self._log_behavior(final_log_entry)
-        pipeline_status["logs"] = self.log_buffer
+        pipeline_status["logs"] = self.log_buffer.copy()
         print(f"--- Response Processing Complete. Final Status: {'Safe' if pipeline_status['is_safe'] else 'Blocked'} ---")
         return self._convert_numpy_to_python_types(pipeline_status)
 
@@ -545,12 +551,16 @@ class LLMSecurityGuardrails:
         """
         Orchestrates the end-to-end guardrail pipeline for a full LLM interaction.
         """
+        self._clear_log_buffer()
         prompt_result = self.process_prompt(user_prompt)
         if not prompt_result["is_safe"]:
             return prompt_result
 
         llm_response = llm_response_simulator_func(prompt_result["prompt_processed"])
         response_result = self.process_response(llm_response)
+
+        # Combine logs from prompt and response processing
+        combined_logs = prompt_result["logs"] + response_result["logs"]
 
         # Combine results
         combined_result = {
@@ -561,6 +571,6 @@ class LLMSecurityGuardrails:
             "is_safe": prompt_result["is_safe"] and response_result["is_safe"],
             "blocked_reason": prompt_result["blocked_reason"] or response_result["blocked_reason"],
             "flags": {**prompt_result["flags"], **response_result["flags"]},
-            "logs": self.log_buffer
+            "logs": combined_logs
         }
         return self._convert_numpy_to_python_types(combined_result)
