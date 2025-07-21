@@ -24,22 +24,6 @@ from sentence_transformers import SentenceTransformer
 import requests
 import os
 
-# Load models to verify no import errors
-nlp = spacy.load("en_core_web_sm")
-for i in range(3):
-    try:
-        st_model = SentenceTransformer('all-MiniLM-L6-v2', use_auth_token=os.environ.get("HF_TOKEN"))
-        print("SentenceTransformer model loaded successfully.")
-        break
-    except requests.exceptions.HTTPError as e:
-        if i < 2:
-            print(f"Failed to load SentenceTransformer model, retrying in 5 seconds... (Error: {e})")
-            time.sleep(5)
-        else:
-            print(f"Failed to load SentenceTransformer model after 3 attempts. Error: {e}")
-            raise
-print("All models loaded successfully.")
-
 # --- 3. Define the LLMSecurityGuardrails Class ---
 
 class LLMSecurityGuardrails:
