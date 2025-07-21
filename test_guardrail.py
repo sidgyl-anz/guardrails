@@ -60,5 +60,12 @@ class TestGuardrail(unittest.TestCase):
         self.assertFalse(result['is_safe'])
         self.assertEqual(result['blocked_reason'], 'Toxic Output Detected')
 
+    def test_log_buffer_reset_each_call(self):
+        self.guardrails.process_prompt("This is a safe prompt.")
+        first_length = len(self.guardrails.log_buffer)
+        self.guardrails.process_prompt("Another safe prompt.")
+        second_length = len(self.guardrails.log_buffer)
+        self.assertEqual(first_length, second_length)
+
 if __name__ == '__main__':
     unittest.main()
