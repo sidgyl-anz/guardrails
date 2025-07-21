@@ -173,3 +173,23 @@ Future work could include:
 *   Adding more sophisticated security guardrails, such as a guardrail for detecting and blocking bias.
 *   Integrating the system with a real-time monitoring and alerting system.
 *   Conducting a more extensive evaluation of the system with a wider range of attacks.
+
+## Running Tests
+
+Before running the test suite, install the project dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Once the dependencies are installed, execute the tests with:
+
+```bash
+pytest
+```
+
+You can also run the Makefile target which performs the same steps:
+
+```bash
+make test
+```
