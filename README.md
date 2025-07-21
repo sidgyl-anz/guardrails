@@ -31,11 +31,11 @@ The security guardrails pipeline is implemented in the `LLMSecurityGuardrails` c
 
 The pipeline is composed of the following guardrails:
 
-*   **Prompt Injection Detection:** This guardrail now leverages the `llm-guard` library's `PromptInjection` scanner to detect and block prompt injection attacks.
+*   **Prompt Injection Detection:** This guardrail uses a combination of regex-based keyword patterns and semantic similarity to known malicious prompts to detect and block prompt injection attacks.
 *   **PII (Personally Identifiable Information) Detection and Anonymization:** This guardrail uses the Microsoft Presidio library to detect and anonymize PII in both the user prompt and the LLM response.
 *   **Toxicity Detection:** This guardrail uses the Detoxify library to detect and block toxic content in both the user prompt and the LLM response.
 *   **Output Validation:** This guardrail performs a series of checks on the LLM response, including JSON schema validation and hallucination detection.
-*   **Anomaly Detection:** This guardrail now relies on LLM Guard's `Relevance` scanner to flag off-topic or unrelated responses.
+*   **Anomaly Detection:** This guardrail uses SentenceTransformer embeddings in combination with an Isolation Forest model to flag off-topic or unrelated responses.
 
 ## 3. Implementation Details
 
@@ -43,7 +43,7 @@ This section provides a detailed overview of the implementation of each of the s
 
 ### 3.1. Prompt Injection Detection
 
-The prompt injection detection guardrail is implemented in the `_filter_prompt_injection` method and now relies on the `llm-guard` library. The `PromptInjection` scanner is invoked to evaluate each user prompt. If `llm-guard` is not available, the system falls back to simple keyword and regex checks.
+The prompt injection detection guardrail is implemented in the `_filter_prompt_injection` method. It first checks the prompt against a set of regex patterns for known jailbreak keywords. If no match is found, the prompt is encoded using a sentence embedding model and compared for semantic similarity against a list of malicious prompts. Prompts that exceed the similarity threshold are flagged as potential injections.
 
 
 ### 3.2. PII Detection and Anonymization
@@ -70,7 +70,7 @@ The checks include:
 
 ### 3.5. Anomaly Detection
 
-The anomaly detection guardrail is implemented in the `_detect_anomaly` method. Instead of a custom model, it now leverages the `Relevance` scanner from `llm-guard` to check whether the LLM response is on-topic with respect to the original prompt. Responses deemed irrelevant are flagged as anomalous.
+The anomaly detection guardrail is implemented in the `_detect_anomaly` method. It encodes each piece of text with a SentenceTransformer model, scales the embedding, and then scores it using an Isolation Forest. Responses whose scores fall below the configured threshold are flagged as anomalous.
 
 ## 4. How to Use the API
 
