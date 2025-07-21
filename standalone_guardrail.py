@@ -195,7 +195,7 @@ class LLMSecurityGuardrails:
         )
     
         # Exclude CITY and LOCATION from PII handling
-        excluded_entities = {"CITY", "LOCATION"}
+        excluded_entities = {"CITY", "LOCATION","DATE_TIME"}
         filtered_results = [r for r in analysis_results if r.entity_type not in excluded_entities]
         pii_detected = len(filtered_results) > 0
     
