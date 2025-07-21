@@ -164,7 +164,25 @@ The API returns a JSON object containing a detailed analysis of the interaction,
 }
 ```
 
-## 5. Conclusion
+## 5. HuggingFace Token Setup
+
+Some guardrails rely on pretrained models hosted on HuggingFace. These models
+are downloaded using the `SentenceTransformer` library which accepts an access
+token via the `HF_TOKEN` environment variable. If you plan on using private
+models or any model that requires authentication, create a token on
+[HuggingFace](https://huggingface.co/settings/tokens) and export it before
+running the application:
+
+```bash
+export HF_TOKEN=<your-token>
+```
+
+The default models used in this project are public. If `HF_TOKEN` is not set the
+code attempts to download the model without authentication and will still run in
+most environments thanks to the try/except fallback logic in
+`standalone_guardrail.py`.
+
+## 6. Conclusion
 
 This project has demonstrated the successful implementation of a comprehensive security guardrail system for LLM-powered conversational AI applications. The system is effective in mitigating a wide range of risks, and it provides a solid foundation for building safe and reliable conversational AI applications.
 
