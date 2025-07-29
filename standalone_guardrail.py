@@ -161,14 +161,14 @@ class LLMSecurityGuardrails:
     def _detect_pii(self, text: str) -> tuple[str, list[RecognizerResult], bool]:
         """
         Detects and anonymizes GDPR-relevant PII using Microsoft Presidio.
-        Excludes non-sensitive location entities like 'CITY' and 'LOCATION'.
+        Excludes non-sensitive location entities like CITY, LOCATION,DATE_TIME,PERSON
     
         Args:
             text (str): The input text to scan for PII.
     
         Returns:
             tuple[str, list[RecognizerResult], bool]: A tuple containing:
-                - anonymized_text (str): The text with detected PII replaced by entity types (e.g., <PERSON>, <EMAIL_ADDRESS>).
+                - anonymized_text (str): The text with detected PII replaced by entity types (e.g.,  <EMAIL_ADDRESS>).
                 - filtered_results (list[RecognizerResult]): List of recognized entities excluding CITY and LOCATION.
                 - pii_detected (bool): True if any PII (excluding CITY and LOCATION) was found.
         """
@@ -179,7 +179,7 @@ class LLMSecurityGuardrails:
         )
     
         # Exclude CITY and LOCATION from PII handling
-        excluded_entities = {"CITY", "LOCATION","DATE_TIME"}
+        excluded_entities = {"CITY", "LOCATION","DATE_TIME","PERSON"}
         filtered_results = [r for r in analysis_results if r.entity_type not in excluded_entities]
         pii_detected = len(filtered_results) > 0
     
