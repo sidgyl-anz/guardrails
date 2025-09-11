@@ -4,14 +4,9 @@
 
 ```mermaid
 flowchart LR
-
-
   %% External Entities
   U[/"User / Client"/]
   PG[/"Payment Gateway"/]
-  %% External Entity
-  U[/"User / Client"/]
-
 
   %% System as single process
   P0([Photo Sharing Site])
@@ -28,7 +23,7 @@ flowchart LR
   P0 -->|"Store / fetch payment records"| DS3
   P0 -->|"Charge / verify payments"| PG
   P0 -->|"Auth tokens, statuses, photo bytes, payment statuses"| U
-
+```
 
 ## Detailed Flow
 
@@ -72,7 +67,6 @@ flowchart LR
   P3 -->|"Read BLOB + metadata"| DS2
   DS2 -->|"Photo bytes + metadata"| P3
   P3 -->|"Photo (or error)"| U
-
 
   %% --- P4: Process Payment ---
   U -->|"Payment details + token"| P4
