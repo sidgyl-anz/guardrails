@@ -15,9 +15,7 @@ RUN python -m spacy download en_core_web_sm
 COPY . .
 
 # Set environment variables for the application
-# The PORT is standard for Cloud Run, and GEMINI_API_KEY will be injected securely
 ENV PORT=8080
-ENV GEMINI_API_KEY=""
 
 # Command to run the FastAPI application when the container starts
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
