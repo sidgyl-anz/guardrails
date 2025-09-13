@@ -1,16 +1,15 @@
-# Web Framework
+# Web
 fastapi
-uvicorn
+uvicorn[standard]
 
-# LangChain / LangGraph
+# LangChain / LangGraph (as you had)
 langchain
 langgraph
 
-# Google AI SDK for Gemini
+# Google AI SDK
 google-genai
 
-# Guardrail Libraries
-# Pinned presidio versions to ensure compatibility with Pydantic v2
+# Guardrail libs (pins kept)
 presidio_analyzer==2.2.359
 presidio_anonymizer==2.2.359
 detoxify
@@ -19,4 +18,10 @@ torch
 pandas
 scikit-learn
 sentence-transformers
+
+# SpaCy core
 spacy==3.7.5
+
+# GCS
+google-cloud-storage
+google-auth
