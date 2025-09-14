@@ -1,19 +1,7 @@
 # standalone_guardrails.py
-# End-to-end security guardrails with CLS model pulled from a GCS bucket root.
-# Pipeline:
-#   INPUT  : OBF hard-block -> Injection -> Toxicity -> PII(MASK) -> CLS(block)
-#   OUTPUT : PII(MASK) -> Toxicity(block)
-#
-# Env vars:
-#   GCS_BUCKET   = guardhealth            (bucket name only, no gs://)
-#   CLS_THR      = 0.58                   (DistilRoBERTa unsafe prob threshold)
-#   INJ_THR      = 0.95                   (Prompt injection threshold)
-#   TOX_THR      = 0.70                   (Toxicity threshold)
-#   PII_THR      = 0.75                   (Presidio score threshold)
-#
-# Model files expected at bucket root:
-#   config.json, tokenizer.json (and/or vocab files), model.safetensors OR pytorch_model.bin,
-#   pipeline_meta_aug_60k.json (optional; if present, will read threshold_val)
+# End-to-end security guardrails with CLS model pulled from a GCS bucket.
+# INPUT  : OBF hard-block -> Injection -> Toxicity -> PII(MASK) -> CLS(block)
+# OUTPUT : PII(MASK) -> Toxicity(block)
 
 import os
 import re
@@ -26,23 +14,19 @@ from typing import Optional, Tuple, List
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoTokenizer as HFTok, AutoModelForSequenceClassification as HFSeqCls
 
-# --- External libs (ensure in requirements.txt) ---
-# google-cloud-storage is required to pull from GCS in Cloud Run
+# External deps
 from google.cloud import storage
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
-from presidio_analyzer.recognizer_result import RecognizerResult
 from detoxify import Detoxify
-
-# Prompt-injection detector (ProtectAI)
-from transformers import AutoTokenizer as HFTok, AutoModelForSequenceClassification as HFSeqCls
 
 logger = logging.getLogger("standalone_guardrails")
 logger.setLevel(logging.INFO)
 
 # ---------------------------
-# Helpers: text cleaning & OBF detection/deobf
+# Helpers: text cleaning & OBF detection
 # ---------------------------
 _B64_RE = re.compile(r'^[A-Za-z0-9+/=\s]+$')
 
@@ -58,11 +42,9 @@ def strip_code_fences(s: str) -> Tuple[str, bool]:
     if t.startswith("```") and t.endswith("```"):
         inner = t[3:-3].strip()
         return inner, True
-    # also catch inline triple backticks
     if t.count("```") >= 2:
         inner = t.replace("```", "")
         return inner.strip(), True
-    # inline backticks
     if t.startswith("`") and t.endswith("`"):
         return t.strip("`").strip(), True
     return t, False
@@ -92,10 +74,6 @@ def try_base64(s: str) -> Optional[str]:
     return None
 
 def deobfuscate_and_flag(original: str) -> Tuple[str, bool, str]:
-    """
-    Returns (canonical_text, obf_flag, obf_method).
-    We only use this to detect OBF; policy hard-blocks if any obf is present.
-    """
     s0, had_fence = strip_code_fences(original)
     if had_fence:
         return clean_text(s0), True, "codefence"
@@ -108,26 +86,23 @@ def deobfuscate_and_flag(original: str) -> Tuple[str, bool, str]:
     return clean_text(s0), False, "none"
 
 # ---------------------------
-# GCS download (bucket root)
+# GCS download
 # ---------------------------
 def download_prefix_from_gcs(bucket_name: str, prefix: str, dest_dir: str) -> None:
     """
-    Download all blobs under `prefix` (may be empty for bucket root) into `dest_dir`.
+    Download all blobs under `prefix` (empty means bucket root) into `dest_dir`.
     """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     os.makedirs(dest_dir, exist_ok=True)
 
-    # If prefix is '', list all objects at bucket root
     it = client.list_blobs(bucket, prefix=prefix) if prefix else client.list_blobs(bucket)
 
     count = 0
     for blob in it:
-        # Skip "directory marker"
         if blob.name.endswith("/"):
             continue
         rel = blob.name[len(prefix):] if prefix and blob.name.startswith(prefix) else blob.name
-        # Strip leading slashes
         rel = rel.lstrip("/")
         local_path = os.path.join(dest_dir, rel)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
@@ -137,7 +112,7 @@ def download_prefix_from_gcs(bucket_name: str, prefix: str, dest_dir: str) -> No
 
     if count == 0:
         raise FileNotFoundError(
-            f"No model files found in gs://{bucket_name}/{prefix} (prefix='{prefix}')."
+            f"No model files found in gs://{bucket_name}/{prefix or ''} (prefix='{prefix}')."
         )
 
 # ---------------------------
@@ -145,59 +120,60 @@ def download_prefix_from_gcs(bucket_name: str, prefix: str, dest_dir: str) -> No
 # ---------------------------
 class LLMSecurityGuardrails:
     """
-    Input pipeline:
-      - Hard-block obfuscation (code fences / rot13 / base64 markers)
-      - Prompt-injection model (block if prob >= INJ_THR)
-      - Toxicity (block if any score >= TOX_THR)
-      - PII (mask-only, never blocks)
-      - CLS DistilRoBERTa (block if prob >= CLS_THR)
-    Output pipeline:
-      - PII (mask-only, never blocks)
-      - Toxicity (block if any score >= TOX_THR)
+    INPUT  : OBF hard-block → Injection → Toxicity → PII(MASK) → CLS(block)
+    OUTPUT : PII(MASK) → Toxicity(block)
+    CLS artifacts are pulled from GCS at startup into /tmp/cls_model.
     """
 
     def __init__(
         self,
-        pii_threshold: Optional[float] = None,
-        toxicity_threshold: Optional[float] = None,
-        semantic_injection_threshold: Optional[float] = None,  # unused (we use model)
-        anomaly_threshold: Optional[float] = None,              # unused (no IF here)
+        # Storage
+        gcs_bucket: str,
+        cls_prefix: str = "",   # '' = bucket root; e.g., 'cls_distilroberta_aug_60k/'
+        # Thresholds
+        pii_threshold: float = 0.75,
+        toxicity_threshold: float = 0.70,
+        injection_threshold: float = 0.95,
+        cls_threshold: float = 0.58,
+        # Output policy (optional future use)
+        output_pii_blocklist: Optional[List[str]] = None,
     ):
-        # thresholds (env overrides)
-        self.pii_threshold = float(os.getenv("PII_THR", pii_threshold if pii_threshold is not None else 0.75))
-        self.toxicity_threshold = float(os.getenv("TOX_THR", toxicity_threshold if toxicity_threshold is not None else 0.70))
-        self.injection_threshold = float(os.getenv("INJ_THR", 0.95))
-        self.cls_threshold = float(os.getenv("CLS_THR", 0.58))
+        if not gcs_bucket:
+            raise EnvironmentError("gcs_bucket is required (bucket name only, no gs://).")
 
-        # GCS bucket config
-        self.gcs_bucket = os.getenv("GCS_BUCKET", "").strip()
-        if not self.gcs_bucket:
-            raise EnvironmentError("GCS_BUCKET env var is required (bucket name only, e.g., 'guardhealth').")
+        self.gcs_bucket = gcs_bucket
+        self.cls_prefix = cls_prefix.strip("/")
+        if self.cls_prefix:
+            self.cls_prefix = self.cls_prefix + "/"
+
+        # thresholds (env can still override)
+        self.pii_threshold = float(os.getenv("PII_THR", pii_threshold))
+        self.toxicity_threshold = float(os.getenv("TOX_THR", toxicity_threshold))
+        self.injection_threshold = float(os.getenv("INJ_THR", injection_threshold))
+        self.cls_threshold = float(os.getenv("CLS_THR", cls_threshold))
+
+        self.output_pii_blocklist = set(output_pii_blocklist or [])
 
         # local model dir
         self.cls_local_dir = "/tmp/cls_model"
-        self._ensure_cls_local()  # pull from bucket root
+        self._ensure_cls_local()
 
-        # load CLS (DistilRoBERTa) model & tokenizer
-        logger.info("Loading CLS model from local dir...")
-        self.cls_tok = AutoTokenizer.from_pretrained(self.cls_local_dir)
-        self.cls_mdl = AutoModelForSequenceClassification.from_pretrained(self.cls_local_dir).eval()
+        # CLS model
+        logger.info("Loading CLS model from local directory...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.cls_mdl.to(self.device)
+        self.cls_tok = AutoTokenizer.from_pretrained(self.cls_local_dir)
+        self.cls_mdl = AutoModelForSequenceClassification.from_pretrained(self.cls_local_dir).to(self.device).eval()
 
-        # optional: override CLS_THR using meta if present
+        # optional meta threshold
         meta_path = os.path.join(self.cls_local_dir, "pipeline_meta_aug_60k.json")
-        if os.path.exists(meta_path):
+        if os.path.exists(meta_path) and "CLS_THR" not in os.environ:
             try:
                 with open(meta_path, "r") as f:
                     meta = json.load(f)
-                val_thr = float(meta.get("threshold_val", self.cls_threshold))
-                # Use env override if provided; otherwise meta
-                if "CLS_THR" not in os.environ:
-                    self.cls_threshold = val_thr
-                logger.info(f"Using CLS threshold = {self.cls_threshold:.2f}")
+                self.cls_threshold = float(meta.get("threshold_val", self.cls_threshold))
+                logger.info(f"Using CLS threshold = {self.cls_threshold:.2f} (from meta)")
             except Exception as e:
-                logger.warning(f"Failed to read meta JSON: {e}")
+                logger.warning(f"Could not read meta JSON: {e}")
 
         # Presidio
         self.analyzer = AnalyzerEngine()
@@ -207,7 +183,7 @@ class LLMSecurityGuardrails:
             "NATIONALITY", "TITLE", "ORGANIZATION", "CARDINAL", "ORDINAL"
         }
 
-        # Detoxify toxicity
+        # Toxicity
         self.detox = Detoxify('unbiased')
 
         # Prompt injection model
@@ -218,14 +194,13 @@ class LLMSecurityGuardrails:
 
         logger.info("Guardrails initialized.")
 
-    # -------- GCS model fetch --------
     def _ensure_cls_local(self):
         if os.path.exists(os.path.join(self.cls_local_dir, "config.json")):
-            return  # already present
-        logger.info(f"Pulling CLS files from GCS bucket root: gs://{self.gcs_bucket}/")
-        download_prefix_from_gcs(self.gcs_bucket, prefix="", dest_dir=self.cls_local_dir)
+            return
+        logger.info(f"Pulling CLS files from: gs://{self.gcs_bucket}/{self.cls_prefix}")
+        download_prefix_from_gcs(self.gcs_bucket, self.cls_prefix, self.cls_local_dir)
 
-    # -------- Model scorers --------
+    # -------- scorers --------
     @torch.no_grad()
     def _cls_prob(self, text: str) -> float:
         enc = self.cls_tok([text], truncation=True, padding=True, return_tensors="pt").to(self.device)
@@ -251,11 +226,8 @@ class LLMSecurityGuardrails:
         masked = self.anonymizer.anonymize(text=text, analyzer_results=keep).text
         return masked, bool(keep), sorted({r.entity_type for r in keep})
 
-    # -------- Public API --------
+    # -------- public API --------
     def process_prompt(self, user_prompt: str) -> dict:
-        """
-        Input guards: OBF hard-block → Injection → Toxicity → PII(MASK) → CLS(block)
-        """
         rec = {
             "prompt_original": user_prompt,
             "prompt_processed": user_prompt,
@@ -264,7 +236,7 @@ class LLMSecurityGuardrails:
             "flags": {}
         }
 
-        # Deobf (detect) + hard-block if any
+        # OBF hard-block
         deobf_text, obf_flag, obf_method = deobfuscate_and_flag(user_prompt)
         rec["flags"]["obf_any"] = bool(obf_flag)
         rec["flags"]["obf_method"] = obf_method
@@ -308,9 +280,6 @@ class LLMSecurityGuardrails:
         return rec
 
     def process_response(self, llm_response: str) -> dict:
-        """
-        Output guards: PII(MASK) -> Toxicity(block)
-        """
         rec = {
             "llm_response_original": llm_response,
             "llm_response_processed": llm_response,
@@ -336,13 +305,8 @@ class LLMSecurityGuardrails:
         return rec
 
     def process_llm_interaction(self, user_prompt: str, llm_response_simulator_func) -> dict:
-        """
-        Full pipeline orchestration. We run input guards, and if safe, we pass the
-        (masked/processed) prompt to your simulator to get a response; then run output guards.
-        """
         pin = self.process_prompt(user_prompt)
         if not pin["is_safe"]:
-            # Short-circuit if input was blocked
             return {
                 "prompt_original": user_prompt,
                 "prompt_processed": pin.get("prompt_processed", user_prompt),
@@ -353,7 +317,6 @@ class LLMSecurityGuardrails:
                 "flags": pin["flags"]
             }
 
-        # Call your LLM (or pass-through external response) using processed prompt
         llm_resp = llm_response_simulator_func(pin["prompt_processed"])
         pout = self.process_response(llm_resp)
 
