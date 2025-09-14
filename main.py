@@ -1,31 +1,30 @@
+# main.py
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 import os
 
-# Our guardrails class (see standalone_guardrails.py below)
-from standalone_guardrail import LLMSecurityGuardrails
+from standalone_guardrails import LLMSecurityGuardrails
 
 app = FastAPI(title="Guardrails API", version="1.0.0")
 
-# ---- Env knobs (all optional) ----
-GCS_BUCKET            = os.getenv("GCS_BUCKET", "guardhealth")
-CLS_SUBDIR            = os.getenv("CLS_SUBDIR", "cls_distilroberta_aug_60k")   # folder inside bucket
-CLS_THRESHOLD_ENV     = os.getenv("CLS_THRESHOLD")  # if None, we read from meta json
-INJECTION_THR         = float(os.getenv("INJECTION_THRESHOLD", "0.95"))
-TOXICITY_THR          = float(os.getenv("TOXICITY_THRESHOLD", "0.70"))
-PII_CONF              = float(os.getenv("PII_CONFIDENCE", "0.75"))
-# Comma-separated list of output PII types that should BLOCK (after masking)
-OUTPUT_PII_BLOCKLIST  = os.getenv("OUTPUT_PII_BLOCKLIST", "US_SSN,CREDIT_CARD,IBAN,SWIFT_CODE,US_BANK_NUMBER,UK_NHS")
+# Read env (console/UI-friendly)
+GCS_BUCKET    = os.getenv("GCS_BUCKET", "guardhealth")        # bucket name only
+CLS_PREFIX    = os.getenv("CLS_PREFIX", "")                   # '' means bucket root
+CLS_THR       = float(os.getenv("CLS_THR", "0.58"))
+INJ_THR       = float(os.getenv("INJ_THR", "0.95"))
+TOX_THR       = float(os.getenv("TOX_THR", "0.70"))
+PII_THR       = float(os.getenv("PII_THR", "0.75"))
+OUT_PII_BLOCK = os.getenv("OUTPUT_PII_BLOCKLIST", "")
 
 guardrails = LLMSecurityGuardrails(
     gcs_bucket=GCS_BUCKET,
-    cls_subdir=CLS_SUBDIR,
-    cls_threshold_str=CLS_THRESHOLD_ENV,
-    pii_threshold=PII_CONF,
-    toxicity_threshold=TOXICITY_THR,
-    injection_threshold=INJECTION_THR,
-    output_pii_blocklist=[s.strip() for s in OUTPUT_PII_BLOCKLIST.split(",") if s.strip()],
+    cls_prefix=CLS_PREFIX,          # keep '' to load from bucket root
+    pii_threshold=PII_THR,
+    toxicity_threshold=TOX_THR,
+    injection_threshold=INJ_THR,
+    cls_threshold=CLS_THR,
+    output_pii_blocklist=[s.strip() for s in OUT_PII_BLOCK.split(",") if s.strip()],
 )
 
 class Interaction(BaseModel):
@@ -39,14 +38,14 @@ async def health():
 @app.post("/process")
 async def process(interaction: Interaction):
     """
-    - If both user_prompt & llm_response: end-to-end (prompt pipeline then response pipeline)
-    - If only user_prompt: input pipeline only
-    - If only llm_response: output pipeline only
+    - Both provided  : run end-to-end pipeline (input then output)
+    - Only prompt    : input pipeline only
+    - Only response  : output pipeline only
     """
     if interaction.user_prompt and interaction.llm_response:
         result = guardrails.process_llm_interaction(
             user_prompt=interaction.user_prompt,
-            llm_response_simulator_func=lambda p: interaction.llm_response
+            llm_response_simulator_func=lambda p: interaction.llm_response,
         )
     elif interaction.user_prompt:
         result = guardrails.process_prompt(user_prompt=interaction.user_prompt)
