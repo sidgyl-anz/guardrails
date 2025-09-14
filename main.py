@@ -4,7 +4,7 @@ from typing import Optional
 import os
 
 # Our guardrails class (see standalone_guardrails.py below)
-from standalone_guardrails import LLMSecurityGuardrails
+from standalone_guardrail import LLMSecurityGuardrails
 
 app = FastAPI(title="Guardrails API", version="1.0.0")
 
