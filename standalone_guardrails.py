@@ -235,12 +235,14 @@ class LLMSecurityGuardrails:
         for r in res:
             if r.entity_type in self._pii_exclude:
                 continue
+
             span = text[r.start:r.end]
             if r.entity_type == "DATE_TIME":
                 if span.strip().lower() in relative_terms:
                     continue
             if r.entity_type == "PERSON" and not any(ch.isupper() for ch in span):
                 continue
+
             keep.append(r)
 
         masked = self.anonymizer.anonymize(text=text, analyzer_results=keep).text
