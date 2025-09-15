@@ -20,7 +20,6 @@ from transformers import AutoTokenizer as HFTok, AutoModelForSequenceClassificat
 from google.cloud import storage
 from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
 from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import AnonymizerConfig
 from detoxify import Detoxify
 
 logger = logging.getLogger("standalone_guardrails")
@@ -294,42 +293,38 @@ class LLMSecurityGuardrails:
         thr = self.toxicity_threshold
         return any(float(v) >= thr for v in scores.values())
 
-    def _pii_mask(self, text: str) -> Tuple[str, bool, List[str]]:
-        """
-        Run Presidio analyzer and anonymizer with:
-          - Exclusions via self._pii_exclude (e.g., DATE_TIME, ORGANIZATION, etc.)
-          - Custom ABSOLUTE_DATE recognizer enabled
-          - PERSON masked to an empty string (not '<PERSON>')
-        """
-        res = self.analyzer.analyze(text=text, language="en", score_threshold=self.pii_threshold)
 
-        # Keep only entities not excluded
-        keep = [r for r in res if r.entity_type not in self._pii_exclude]
+def _pii_mask(self, text: str) -> Tuple[str, bool, List[str]]:
+    """
+    Run Presidio analyzer/anonymizer with:
+      - Exclusions via self._pii_exclude (e.g., DATE_TIME, ORGANIZATION, etc.)
+      - Custom ABSOLUTE_DATE recognizer enabled
+      - PERSON masked to an empty string (not '<PERSON>')
+    """
+    res = self.analyzer.analyze(text=text, language="en", score_threshold=self.pii_threshold)
 
-        if not keep:
-            return text, False, []
+    # Keep only entities not excluded
+    keep = [r for r in res if r.entity_type not in self._pii_exclude]
+    if not keep:
+        return text, False, []
 
-        # Custom anonymizer config:
-        # - PERSON -> replace with empty string
-        # - Other entities -> default behavior (replace with <ENTITY_TYPE>)
-        anonymizers_config = {}
+    # Dict-based anonymizer config (works across Presidio versions)
+    anonymizers_config = {
+        "PERSON": {
+            "type": "replace",
+            "new_value": ""   # exact requirement: remove names entirely
+        }
+        # add more overrides if needed, e.g.:
+        # "ABSOLUTE_DATE": {"type": "replace", "new_value": "<DATE>"}
+    }
 
-        # PERSON to empty string
-        anonymizers_config["PERSON"] = AnonymizerConfig(
-            "replace",
-            {"new_value": ""}  # exact request: send empty instead of <PERSON>
-        )
+    masked = self.anonymizer.anonymize(
+        text=text,
+        analyzer_results=keep,
+        anonymizers_config=anonymizers_config
+    ).text
 
-        # You can add more overrides if needed, e.g.:
-        # anonymizers_config["ABSOLUTE_DATE"] = AnonymizerConfig("replace", {"new_value": "<DATE>"})
-
-        masked = self.anonymizer.anonymize(
-            text=text,
-            analyzer_results=keep,
-            anonymizers_config=anonymizers_config
-        ).text
-
-        return masked, True, sorted({r.entity_type for r in keep})
+    return masked, True, sorted({r.entity_type for r in keep})
 
     # -------- public API --------
     def process_prompt(self, user_prompt: str) -> dict:
