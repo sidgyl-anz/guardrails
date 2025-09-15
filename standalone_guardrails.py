@@ -18,7 +18,7 @@ from transformers import AutoTokenizer as HFTok, AutoModelForSequenceClassificat
 
 # External deps
 from google.cloud import storage
-from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
+from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 from detoxify import Detoxify
 
@@ -116,73 +116,6 @@ def download_prefix_from_gcs(bucket_name: str, prefix: str, dest_dir: str) -> No
         )
 
 # ---------------------------
-# Custom Presidio recognizer: Absolute dates only
-# ---------------------------
-class AbsoluteDateRecognizer(PatternRecognizer):
-    """
-    Detects absolute calendar dates while avoiding relative terms like
-    'today', 'tomorrow', 'yesterday', 'next week', etc.
-    Produces entity_type='ABSOLUTE_DATE'.
-    """
-
-    def __init__(self):
-        # YYYY-MM-DD (ISO)
-        iso_ymd = r"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])\b"
-
-        # DD/MM/YYYY or D/M/YYYY
-        dmy_slash = r"\b(?:0?[1-9]|[12]\d|3[01])/(?:0?[1-9]|1[0-2])/(?:19|20)\d{2}\b"
-
-        # MM/DD/YYYY or M/D/YYYY
-        mdy_slash = r"\b(?:0?[1-9]|1[0-2])/(?:0?[1-9]|[12]\d|3[01])/(?:19|20)\d{2}\b"
-
-        # DD Mon YYYY  (e.g., 25 Dec 2024)
-        d_mon_yyyy = (
-            r"\b(?:0?[1-9]|[12]\d|3[01])\s+"
-            r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+"
-            r"(?:19|20)\d{2}\b"
-        )
-
-        # Mon DD, YYYY  (e.g., Dec 25, 2024)
-        mon_d_yyyy = (
-            r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+"
-            r"(?:0?[1-9]|[12]\d|3[01]),\s+"
-            r"(?:19|20)\d{2}\b"
-        )
-
-        # Month name long form (e.g., December 25, 2024)
-        monthname_d_yyyy = (
-            r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+"
-            r"(?:0?[1-9]|[12]\d|3[01]),\s+(?:19|20)\d{2}\b"
-        )
-
-        # DD Monthname YYYY (e.g., 25 December 2024)
-        d_monthname_yyyy = (
-            r"\b(?:0?[1-9]|[12]\d|3[01])\s+"
-            r"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+"
-            r"(?:19|20)\d{2}\b"
-        )
-
-        patterns = [
-            Pattern(name="iso_ymd",           regex=iso_ymd,            score=0.5),
-            Pattern(name="dmy_slash",         regex=dmy_slash,          score=0.5),
-            Pattern(name="mdy_slash",         regex=mdy_slash,          score=0.5),
-            Pattern(name="d_mon_yyyy",        regex=d_mon_yyyy,         score=0.5),
-            Pattern(name="mon_d_yyyy",        regex=mon_d_yyyy,         score=0.5),
-            Pattern(name="monthname_d_yyyy",  regex=monthname_d_yyyy,   score=0.5),
-            Pattern(name="d_monthname_yyyy",  regex=d_monthname_yyyy,   score=0.5),
-        ]
-
-        super().__init__(
-            supported_entity="ABSOLUTE_DATE",
-            patterns=patterns,
-            context=[
-                "on", "by", "before", "after", "due", "until", "from", "to",
-                "between", "through", "date", "dated", "issued", "expires",
-                "dob", "birth", "valid", "schedule"
-            ],
-        )
-
-# ---------------------------
 # Main Guardrails class
 # ---------------------------
 class LLMSecurityGuardrails:
@@ -245,16 +178,10 @@ class LLMSecurityGuardrails:
         # Presidio
         self.analyzer = AnalyzerEngine()
         self.anonymizer = AnonymizerEngine()
-
-        # Exclude generic/low-risk or high-FP entities; exclude DATE_TIME to ignore relative words
         self._pii_exclude = {
             "LOCATION", "COUNTRY", "CITY", "STATE", "URL", "DOMAIN_NAME",
-            "NATIONALITY", "TITLE", "ORGANIZATION", "CARDINAL", "ORDINAL",
-            "DATE_TIME"  # exclude relative dates like today/tomorrow/yesterday
+            "NATIONALITY", "TITLE", "ORGANIZATION", "CARDINAL", "ORDINAL"
         }
-
-        # Add custom absolute date recognizer (captures only absolute dates)
-        self.analyzer.registry.add_recognizer(AbsoluteDateRecognizer())
 
         # Toxicity
         self.detox = Detoxify('unbiased')
@@ -293,38 +220,11 @@ class LLMSecurityGuardrails:
         thr = self.toxicity_threshold
         return any(float(v) >= thr for v in scores.values())
 
-
-def _pii_mask(self, text: str) -> Tuple[str, bool, List[str]]:
-    """
-    Run Presidio analyzer/anonymizer with:
-      - Exclusions via self._pii_exclude (e.g., DATE_TIME, ORGANIZATION, etc.)
-      - Custom ABSOLUTE_DATE recognizer enabled
-      - PERSON masked to an empty string (not '<PERSON>')
-    """
-    res = self.analyzer.analyze(text=text, language="en", score_threshold=self.pii_threshold)
-
-    # Keep only entities not excluded
-    keep = [r for r in res if r.entity_type not in self._pii_exclude]
-    if not keep:
-        return text, False, []
-
-    # Dict-based anonymizer config (works across Presidio versions)
-    anonymizers_config = {
-        "PERSON": {
-            "type": "replace",
-            "new_value": ""   # exact requirement: remove names entirely
-        }
-        # add more overrides if needed, e.g.:
-        # "ABSOLUTE_DATE": {"type": "replace", "new_value": "<DATE>"}
-    }
-
-    masked = self.anonymizer.anonymize(
-        text=text,
-        analyzer_results=keep,
-        anonymizers_config=anonymizers_config
-    ).text
-
-    return masked, True, sorted({r.entity_type for r in keep})
+    def _pii_mask(self, text: str) -> Tuple[str, bool, List[str]]:
+        res = self.analyzer.analyze(text=text, language="en", score_threshold=self.pii_threshold)
+        keep = [r for r in res if r.entity_type not in self._pii_exclude]
+        masked = self.anonymizer.anonymize(text=text, analyzer_results=keep).text
+        return masked, bool(keep), sorted({r.entity_type for r in keep})
 
     # -------- public API --------
     def process_prompt(self, user_prompt: str) -> dict:
