@@ -222,7 +222,25 @@ class LLMSecurityGuardrails:
 
     def _pii_mask(self, text: str) -> Tuple[str, bool, List[str]]:
         res = self.analyzer.analyze(text=text, language="en", score_threshold=self.pii_threshold)
-        keep = [r for r in res if r.entity_type not in self._pii_exclude]
+
+        relative_terms = {
+            "today",
+            "tomorrow",
+            "yesterday",
+            "tonight",
+            "now",
+        }
+
+        keep = []
+        for r in res:
+            if r.entity_type in self._pii_exclude:
+                continue
+            if r.entity_type == "DATE_TIME":
+                span = text[r.start:r.end].strip().lower()
+                if span in relative_terms:
+                    continue
+            keep.append(r)
+
         masked = self.anonymizer.anonymize(text=text, analyzer_results=keep).text
         return masked, bool(keep), sorted({r.entity_type for r in keep})
 
