@@ -134,7 +134,7 @@ class LLMSecurityGuardrails:
         pii_threshold: float = 0.75,
         toxicity_threshold: float = 0.70,
         injection_threshold: float = 0.95,
-        cls_threshold: float = 0.58,
+        cls_threshold: float = 0.05,
         # Output policy (optional future use)
         output_pii_blocklist: Optional[List[str]] = None,
     ):
