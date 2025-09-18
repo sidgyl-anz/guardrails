@@ -180,8 +180,11 @@ class LLMSecurityGuardrails:
         self.anonymizer = AnonymizerEngine()
         self._pii_exclude = {
             "LOCATION", "COUNTRY", "CITY", "STATE", "URL", "DOMAIN_NAME",
-            "NATIONALITY", "TITLE", "ORGANIZATION", "CARDINAL", "ORDINAL"
+            "NATIONALITY", "TITLE", "ORGANIZATION", "CARDINAL", "ORDINAL",
+            "PERSON", "DATE_TIME"
         }
+        supported_entities = set(self.analyzer.get_supported_entities(language="en"))
+        self._pii_entities = sorted(supported_entities - self._pii_exclude)
 
         # Toxicity
         self.detox = Detoxify('unbiased')
@@ -221,6 +224,7 @@ class LLMSecurityGuardrails:
         return any(float(v) >= thr for v in scores.values())
 
     def _pii_mask(self, text: str) -> Tuple[str, bool, List[str]]:
+
         res = self.analyzer.analyze(text=text, language="en", score_threshold=self.pii_threshold)
 
         relative_terms = {
