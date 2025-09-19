@@ -131,7 +131,7 @@ class LLMSecurityGuardrails:
         gcs_bucket: str,
         cls_prefix: str = "",   # '' = bucket root; e.g., 'cls_distilroberta_aug_60k/'
         # Thresholds
-        pii_threshold: float = 0.75,
+        pii_threshold: float = 0.50,
         toxicity_threshold: float = 0.70,
         injection_threshold: float = 0.95,
         cls_threshold: float = 0.93,
