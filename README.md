@@ -1,4 +1,4 @@
-# LLM-Powered Conversational AI with Advanced Security Guardrails
+# LLM Guardrails
 
 ## Abstract
 
