@@ -164,7 +164,86 @@ The API returns a JSON object containing a detailed analysis of the interaction,
 }
 ```
 
-## 5. HuggingFace Token Setup
+## 5. Colab Notebooks
+
+The `colab/` directory contains three Google Colab notebooks that walk through the full workflow—from generating red-team datasets, to training the safety classifier, to validating the end-to-end guardrail policy. All notebooks are designed to be run in Colab with Google Drive mounted at `/content/drive` so that the generated assets persist between sessions.
+
+### CIS540 - Book 1 - Synthetic Data Generation
+
+This notebook provisions the synthetic prompt/response corpora that power the later training and evaluation steps.【F:colab/CIS540 - Book 1 - Synthetic Data Generation.ipynb†L1】 It performs the following sequence:
+
+1. **Environment setup** – Installs the Gemini SDK, retry helpers, and data tooling, then mounts Google Drive so outputs can be written under `MyDrive/MastersAI/CIS540`. API keys are expected to be supplied via Colab secrets.
+2. **Prompt corpus generation** – Uses a category-to-instruction map (`CATEGORIES`) with a structured system prompt template (`SYS_TMPL`) to call Gemini Flash Lite and request JSON arrays of diverse prompts across injection, jailbreak, harmful-medical, off-topic, PII-leak, and benign intents. Each batch is deduplicated, normalized, and labelled before being appended to the aggregate dataframe.
+3. **Answer corpus generation** – Repeats the API-driven workflow for chatbot outputs, instructing Gemini to return unsafe medical advice, misinformation, toxic responses, PII leaks, and safe answers/refusals for coverage of positive and negative classes.
+4. **Obfuscation augmentation** – Randomly applies ROT13, Base64, or code-fence wrappers to both prompts and answers via helpers such as `make_obf_variants_one` to harden downstream detectors.
+5. **Benign template synthesis** – Creates intro-style benign prompts locally (no API calls) using template lists so that evaluation datasets include safe small talk containing non-sensitive demographic placeholders.
+6. **Train/val/test partitioning** – Generates deterministic group IDs from content hashes and performs a group-aware split to avoid leaking near-duplicates across partitions.
+7. **Persistence** – Writes prompt and response tables to both CSV and Parquet in Drive so the same corpora can be reused by the training and evaluation notebooks without regeneration.
+
+Running Book 1 once produces the canonical red-team CSV/Parquet files referenced throughout the rest of the workflow.
+
+### CIS540 - Book 2 - Anamoly Model Training
+
+Book 2 retrains the DistilRoBERTa classifier that scores unsafe prompts.【F:colab/CIS540 - Book 2 - Anamoly Model Training.ipynb†L1】 The notebook assumes Book 1’s data already lives in Drive and proceeds with:
+
+1. **Dataset assembly** – Loads PubMedQA (safe, unlabeled questions) and HealthSearchQA (safe) via the Hugging Face `datasets` API, cleans the text, and labels them as 0. MedHarm questions are loaded as the unsafe (label 1) class. The held-out red-team prompts from Book 1 are intentionally excluded from training and stored as an evaluation-only dataframe.
+2. **Balanced augmentation** – Calls `augment_balanced` to attach a single random obfuscation to every unsafe row and to a 5% sample of safe rows, improving robustness to disguised attacks while keeping label balance intact.
+3. **Group-aware split & HF conversion** – Computes group IDs from hashed text/source pairs, executes the same grouped train/validation/test split strategy, and converts each split to a Hugging Face `Dataset` for tokenization.
+4. **Fine-tuning** – Initializes the DistilRoBERTa checkpoint, tokenizes with padding, and trains using the Transformers `Trainer` API with mixed-precision when a GPU is available. Validation metrics (accuracy, precision, recall, F1, ROC AUC) are logged for threshold calibration.
+5. **Operating threshold sweep** – Evaluates the validation logits across a grid of probability cutoffs to pick the highest-F1 threshold that maintains the required unsafe recall (defaults to ≥ target). The chosen value (≈0.93 by default) is stored in the exported metadata.
+6. **Evaluation reporting** – Scores the held-out test set plus the red-team prompts, emitting overall/obfuscated/clean confusion matrices and metrics.
+7. **Artifact export** – Saves the fine-tuned model directory, tokenizer, and a JSON metadata file (seed, hyperparameters, thresholds, evaluation metrics) under Drive’s `Projects/guardrails_models_aug_60k` folder for consumption by Book 3 and the Python modules.
+8. **Guardrail sanity check** – Optionally mounts Drive again and runs a lightweight guardrail evaluator that combines the classifier with rule-based obfuscation detection to verify end-to-end performance before handing off to Book 3.
+
+Re-running Book 2 is necessary whenever you regenerate red-team data or want to explore different augmentation/threshold policies.
+
+### CIS540 Project: Book 3 - Guardrails Implementation and Evaluation
+
+The third notebook wires the trained assets into the full guardrail decision policy and measures how well the combined checks handle red-team prompts and responses.【F:colab/CIS540 Project: Book 3 - Guardrails Implementation and Evaluation.ipynb†L1】 Key stages include:
+
+1. **Runtime setup** – Installs Presidio, Detoxify, and Transformers, mounts Drive, and loads paths to the classifier directory, metadata JSON, and the Book 1 red-team CSVs for prompts and responses.
+2. **Model loading** – Restores the DistilRoBERTa classifier (using the calibrated threshold from metadata), ProtectAI’s prompt-injection detector, Detoxify’s toxicity model, and Presidio analyzers/anonymizers. A policy dictionary defines thresholds and actions for each guardrail stage.
+3. **Utility helpers** – Implements deterministic de-obfuscation (`deobf`), heuristics for flagging ROT13/Base64/code-fence artifacts, prompt-injection scoring, toxicity checks, and Presidio-powered PII masking that can return masked text plus detected entity types.
+4. **Guardrail pipelines** – `guard_input` applies the sequential policy of obfuscation hard blocks, injection thresholding, toxicity rejection, PII masking, and classifier gating; `guard_output` handles obfuscation detection, optional de-obfuscation before scanning, PII masking vs. blocking, and toxicity enforcement.
+5. **Dataset evaluation** – Loads the input and output red-team CSVs, derives expected outcomes per category (e.g., injection/jailbreak/harmful_med/off_topic should be blocked), and computes per-row diagnostics plus aggregate accuracy/precision/recall/F1 for both the input pipeline and two output policies (PII mask vs. PII block).
+6. **Combined handling metric** – Produces an additional view that treats either masking or blocking as a “handled” outcome for outputs, which is useful for tracking containment even when masking is preferred.
+7. **Result export** – Writes timestamped CSVs for input evaluation, output (mask), output (block), and the combined handling analysis back to Drive so you can compare multiple guardrail configurations over time.
+
+Use Book 3 whenever you retrain the classifier or adjust the guardrail policy to confirm that the overall system still meets coverage expectations across the curated red-team scenarios.
+
+Open any of these notebooks directly in Google Colab to regenerate datasets, retrain the classifier, or reproduce the guardrail evaluation without needing to run the Python modules locally.
+
+## 6. Python Modules
+
+The repository includes several standalone Python scripts that map directly to the
+architecture described above. These files can be run independently or imported
+into other projects, and each one has a specific responsibility:
+
+* **`standalone_guardrails.py`** – Houses the `LLMSecurityGuardrails` class and
+  all supporting utilities. The module loads classification assets from Google
+  Cloud Storage, runs obfuscation detection, prompt-injection scoring, toxicity
+  screening, and PII masking, and then stitches the input and output pipelines
+  together through `process_prompt`, `process_response`, and
+  `process_llm_interaction`.【F:standalone_guardrails.py†L1-L206】【F:standalone_guardrails.py†L232-L297】
+* **`standalone_guardrail.py`** – A thin compatibility shim that re-exports the
+  full guardrails implementation so older imports such as
+  `from standalone_guardrail import LLMSecurityGuardrails` continue to work
+  without modification.【F:standalone_guardrail.py†L1-L1】
+* **`main.py`** – Spins up the FastAPI service, wiring environment-variable
+  thresholds into a singleton `LLMSecurityGuardrails` instance and exposing the
+  `/health` and `/process` endpoints backed by a Pydantic interaction schema for
+  prompt-only, response-only, or combined evaluations.【F:main.py†L1-L46】
+* **`graph.py`** – Provides an executable walkthrough of the guardrail
+  decisions, simulating eleven representative prompt/response scenarios and
+  printing the resulting `is_safe` verdicts, blocked reasons, and processed
+  payloads for quick inspection without deploying the API.【F:graph.py†L1-L83】
+* **`test_guardrail.py`** – Contains an older unittest harness that expects the
+  compatibility import; it sketches intended behaviors (safe prompt handling,
+  prompt-injection blocking, toxicity detection, and log buffering) and can be
+  adapted as a starting point when building a refreshed automated test suite for
+  the current pipeline.【F:test_guardrail.py†L1-L52】
+
+## 7. HuggingFace Token Setup
 
 Some guardrails rely on pretrained models hosted on HuggingFace. These models
 are downloaded using the `SentenceTransformer` library which accepts an access
@@ -182,7 +261,7 @@ code attempts to download the model without authentication and will still run in
 most environments thanks to the try/except fallback logic in
 `standalone_guardrail.py`.
 
-## 6. Conclusion
+## 8. Conclusion
 
 This project has demonstrated the successful implementation of a comprehensive security guardrail system for LLM-powered conversational AI applications. The system is effective in mitigating a wide range of risks, and it provides a solid foundation for building safe and reliable conversational AI applications.
 
