@@ -1,0 +1,27 @@
+# Web
+fastapi
+uvicorn[standard]
+
+# LangChain / LangGraph (as you had)
+langchain
+langgraph
+
+# Google AI SDK
+google-genai
+
+# Guardrail libs (pins kept)
+presidio_analyzer==2.2.359
+presidio_anonymizer==2.2.359
+detoxify
+transformers
+torch
+pandas
+scikit-learn
+sentence-transformers
+
+# SpaCy core
+spacy==3.7.5
+
+# GCS
+google-cloud-storage
+google-auth
