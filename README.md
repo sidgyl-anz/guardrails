@@ -2,11 +2,12 @@
 
 ## Abstract
 
-This project presents a robust, secure, and scalable framework for building LLM-powered conversational AI applications. It features a multi-layered security pipeline designed to mitigate a wide range of risks, including prompt injections, data leakage, toxic content, and other adversarial attacks. The system is built using a modern Python technology stack, including FastAPI for the web framework, and a suite of best-in-class open-source libraries for the security guardrails. This report details the architecture, implementation, and evaluation of the system, demonstrating its effectiveness in providing a safe and reliable conversational AI experience.
+This project is framework for building LLM-powered conversational AI applications. It features a multi-layered security pipeline designed to mitigate a wide range of risks, including prompt injections, data leakage, toxic content, and other adversarial attacks. The system is built using a  Python technology stack, including FastAPI for the web framework, and a set of best-in-class open-source libraries for the security guardrails. 
+
 
 ## 1. Introduction
 
-Large Language Models (LLMs) have shown remarkable capabilities in natural language understanding and generation, leading to their widespread adoption in various applications. However, their power and flexibility also introduce significant security vulnerabilities. This project addresses these challenges by implementing a comprehensive security guardrail system that inspects both user inputs and LLM outputs, ensuring that the conversational AI operates within safe and ethical boundaries.
+Large Language Models (LLMs) have shown remarkable capabilities in natural language understanding and generation, leading to their widespread adoption in various applications. However, their power and flexibility also introduce significant security vulnerabilities. This project addresses these challenges by implementing a comprehensive security guardrail system that inspects both user inputs and LLM outputs, ensuring that the conversational AI operates within safe and ethical boundaries especially in Health.
 
 The key contributions of this project are:
 
@@ -27,7 +28,7 @@ The application is containerized using Docker, which allows for easy deployment 
 
 ### 2.2. Security Guardrails Pipeline
 
-The security guardrails pipeline is implemented in the `LLMSecurityGuardrails` class. It is a multi-layered pipeline that processes both the user prompt and the LLM response, applying a series of security checks at each stage.
+The security guardrails pipeline is implemented and processes both the user prompt and the LLM response, applying a series of security checks at each stage.
 
 The pipeline is composed of the following guardrails:
 
@@ -50,119 +51,28 @@ Every user prompt is first normalized and inspected for signs of obfuscation or 
 * **ROT13 decoding:** If the prompt references ROT13, the guardrail attempts to decode the payload and evaluates the decoded text. Successfully decoded content is hard-blocked because it indicates a deliberate attempt to hide intent.
 * **Base64 decoding:** Similarly, Base64 payloads are decoded when they appear to be well-formed; successful decoding causes the request to be rejected.
 
-If any obfuscation technique is detected, the prompt is rejected immediately and the processed text is replaced with the decoded version so operators can inspect what was hidden. Otherwise, the cleaned prompt is passed to the remaining validators.【F:standalone_guardrails.py†L38-L106】【F:standalone_guardrails.py†L212-L236】
+If any obfuscation technique is detected, the prompt is rejected immediately and the processed text is replaced with the decoded version so operators can inspect what was hidden. Otherwise, the cleaned prompt is passed to the remaining validators.
 
 ### 3.2. Prompt Injection Detection
 
-Cleaned prompts are scored with the `ProtectAI/deberta-v3-base-prompt-injection-v2` classifier that is loaded in `LLMSecurityGuardrails.__init__()`. The model produces a probability that the text is an injection attempt; if the score exceeds the `injection_threshold` (default 0.95, overridable via the `INJ_THR` environment variable) the request is blocked and labelled as a prompt-injection event. The model weights are cached locally after being downloaded once, keeping latency low for subsequent evaluations.【F:standalone_guardrails.py†L107-L208】【F:standalone_guardrails.py†L236-L253】
+Cleaned prompts are scored with the `ProtectAI/deberta-v3-base-prompt-injection-v2` classifier that is loaded in `LLMSecurityGuardrails.__init__()`. The model produces a probability that the text is an injection attempt; if the score exceeds the `injection_threshold` (default 0.95, overridable via the `INJ_THR` environment variable) the request is blocked and labelled as a prompt-injection event. The model weights are cached locally after being downloaded once, keeping latency low for subsequent evaluations.
 
 ### 3.3. Toxicity Detection
 
-Both prompts and responses are screened with the Detoxify `unbiased` model. The guardrail marks a message as toxic if *any* category score (toxicity, severe toxicity, obscenity, threats, insults, or identity attacks) meets or exceeds the configured `toxicity_threshold` (default 0.70, adjustable with `TOX_THR`). Toxic prompts are rejected; toxic responses stop the pipeline and report the violation to the caller, preventing unsafe content from leaving the system.【F:standalone_guardrails.py†L166-L186】【F:standalone_guardrails.py†L253-L274】【F:standalone_guardrails.py†L277-L297】
+Both prompts and responses are screened with the Detoxify `unbiased` model. The guardrail marks a message as toxic if *any* category score (toxicity, severe toxicity, obscenity, threats, insults, or identity attacks) meets or exceeds the configured `toxicity_threshold` ( 0.70). Toxic prompts are rejected; toxic responses stop the pipeline and report the violation to the caller, preventing unsafe content from leaving the system.
 
 ### 3.4. PII Detection and Anonymization
 
-Personally identifiable information is discovered and masked with Microsoft Presidio’s `AnalyzerEngine` and `AnonymizerEngine`. The guardrail deliberately suppresses high-noise entity types (e.g., generic locations or dates) so that actionable PII such as emails, phone numbers, or account numbers are prioritized. Matches above the `pii_threshold` (default 0.50, configurable by `PII_THR`) are replaced with synthetic tokens in both prompts and responses before being handed to subsequent validators, ensuring no PII is echoed back to the user. Detected entity types are surfaced in the response metadata to aid auditing.【F:standalone_guardrails.py†L131-L165】【F:standalone_guardrails.py†L186-L212】【F:standalone_guardrails.py†L262-L282】
+Personally identifiable information is discovered and masked with Microsoft Presidio’s `AnalyzerEngine` and `AnonymizerEngine`. The guardrail deliberately suppresses high-noise entity types (e.g., generic locations or dates) so that actionable PII such as emails, phone numbers, or account numbers are prioritized. Matches above the `pii_threshold` (default 0.50, configurable by `PII_THR`) are replaced with synthetic tokens in both prompts and responses before being handed to subsequent validators, ensuring no PII is echoed back to the user. Detected entity types are surfaced in the response metadata to aid auditing.
+
 
 ### 3.5. CLS Harmfulness Classification
 
-As a final safeguard on the prompt, the masked or cleaned text is scored with a binary classifier whose weights are stored in Cloud Storage and downloaded on startup. The classifier probability (`cls_prob_unsafe`) is compared against the `cls_threshold` (default 0.93, override via `CLS_THR` or the optional metadata file). Any prompt that crosses the threshold is blocked as “Unsafe Input (CLS)” even if previous checks passed, providing defense-in-depth against sophisticated attacks that evade heuristic detectors.【F:standalone_guardrails.py†L66-L164】【F:standalone_guardrails.py†L212-L274】
+As a final safeguard on the prompt, the masked or cleaned text is scored with a binary classifier (custom). The classifier probability (`cls_prob_unsafe`) is compared against the `cls_threshold` (default 0.93, override via `CLS_THR` or the optional metadata file). Any prompt that crosses the threshold is blocked as “Unsafe Input (CLS)” even if previous checks passed, providing defense-in-depth against sophisticated attacks that evade heuristic detectors.
 
 ### 3.6. Response Post-processing
 
-Responses generated by the LLM are normalized with the same PII masking logic used for prompts and then evaluated for toxicity. If PII is discovered, it is redacted before the payload is returned to the caller. Toxic responses are rejected with the `Toxic Output` reason so downstream systems can halt message delivery. Future enhancements can add formatting or factuality validators on top of this hook without changing the public API.【F:standalone_guardrails.py†L262-L297】
-
-## 4. How to Use the API
-
-The API is exposed at the `/process` endpoint. It accepts a `POST` request with a JSON body containing the user prompt and the LLM response.
-
-**Request Body:**
-
-The API now supports three types of requests:
-
-*   **Request and Response:**
-
-    ```json
-    {
-      "user_prompt": "What is the capital of France?",
-      "llm_response": "The capital of France is Paris."
-    }
-    ```
-
-*   **Request Only:**
-
-    ```json
-    {
-      "user_prompt": "What is the capital of France?"
-    }
-    ```
-
-*   **Response Only:**
-
-    ```json
-    {
-      "llm_response": "The capital of France is Paris."
-    }
-    ```
-
-### Why this is useful
-
-This new flexible API design allows for more granular control over the guardrail system. For example, you might want to:
-
-*   **Pre-screen user prompts:** Before sending a prompt to the LLM, you can use the request-only endpoint to check for prompt injection attacks, PII, or toxic content.
-*   **Post-process LLM responses:** After receiving a response from the LLM, you can use the response-only endpoint to check for PII, toxic content, or other issues.
-*   **Analyze existing interactions:** You can use the request-and-response endpoint to analyze existing conversations for security and quality issues.
-
-**Response Body:**
-
-The API returns a JSON object containing a detailed analysis of the interaction, including a summary of the security checks performed.
-
-```json
-{
-  "prompt_original": "What is the capital of France?",
-  "prompt_processed": "What is the capital of France?",
-  "llm_response_original": "The capital of France is Paris.",
-  "llm_response_processed": "The capital of France is Paris.",
-  "is_safe": true,
-  "blocked_reason": null,
-  "flags": {
-    "prompt_injection_flagged": false,
-    "toxicity_input_scores": {
-      "toxicity": 0.0001867142713163048,
-      ...
-    },
-    "toxicity_input_flagged": false,
-    "pii_input_detected": false,
-    "pii_input_details": [],
-    "anomaly_input_details": {
-      "score": 0.123456789,
-      "is_anomalous": false
-    },
-    "anomaly_input_flagged": false,
-    "pii_output_detected": false,
-    "pii_output_details": [],
-    "toxicity_output_scores": {
-      "toxicity": 0.000123456789,
-      ...
-    },
-    "toxicity_output_flagged": false,
-    "output_format_valid": true,
-    "output_format_validation_message": "Output format valid.",
-    "anomaly_output_details": {
-      "score": 0.123456789,
-      "is_anomalous": false
-    },
-    "anomaly_output_flagged": false
-  },
-  "logs": [
-    {
-      "event_type": "interaction_start",
-      ...
-    },
-    ...
-  ]
-}
-```
+Responses generated by the LLM are normalized with the same PII masking logic used for prompts and then evaluated for toxicity. If PII is discovered, it is redacted before the payload is returned to the caller. Toxic responses are rejected with the `Toxic Output` reason so downstream systems can halt message delivery. Future enhancements can add formatting or factuality validators on top of this hook without changing the public API.
 
 ## 5. Colab Notebooks
 
@@ -209,39 +119,23 @@ The third notebook wires the trained assets into the full guardrail decision pol
 6. **Combined handling metric** – Produces an additional view that treats either masking or blocking as a “handled” outcome for outputs, which is useful for tracking containment even when masking is preferred.
 7. **Result export** – Writes timestamped CSVs for input evaluation, output (mask), output (block), and the combined handling analysis back to Drive so you can compare multiple guardrail configurations over time.
 
-Use Book 3 whenever you retrain the classifier or adjust the guardrail policy to confirm that the overall system still meets coverage expectations across the curated red-team scenarios.
-
-Open any of these notebooks directly in Google Colab to regenerate datasets, retrain the classifier, or reproduce the guardrail evaluation without needing to run the Python modules locally.
-
 ## 6. Python Modules
 
-The repository includes several standalone Python scripts that map directly to the
-architecture described above. These files can be run independently or imported
-into other projects, and each one has a specific responsibility:
 
 * **`standalone_guardrails.py`** – Houses the `LLMSecurityGuardrails` class and
   all supporting utilities. The module loads classification assets from Google
   Cloud Storage, runs obfuscation detection, prompt-injection scoring, toxicity
   screening, and PII masking, and then stitches the input and output pipelines
   together through `process_prompt`, `process_response`, and
-  `process_llm_interaction`.【F:standalone_guardrails.py†L1-L206】【F:standalone_guardrails.py†L232-L297】
-* **`standalone_guardrail.py`** – A thin compatibility shim that re-exports the
-  full guardrails implementation so older imports such as
-  `from standalone_guardrail import LLMSecurityGuardrails` continue to work
-  without modification.【F:standalone_guardrail.py†L1-L1】
+  `process_llm_interaction`.
 * **`main.py`** – Spins up the FastAPI service, wiring environment-variable
   thresholds into a singleton `LLMSecurityGuardrails` instance and exposing the
   `/health` and `/process` endpoints backed by a Pydantic interaction schema for
-  prompt-only, response-only, or combined evaluations.【F:main.py†L1-L46】
+  prompt-only, response-only, or combined evaluations.
 * **`graph.py`** – Provides an executable walkthrough of the guardrail
   decisions, simulating eleven representative prompt/response scenarios and
   printing the resulting `is_safe` verdicts, blocked reasons, and processed
-  payloads for quick inspection without deploying the API.【F:graph.py†L1-L83】
-* **`test_guardrail.py`** – Contains an older unittest harness that expects the
-  compatibility import; it sketches intended behaviors (safe prompt handling,
-  prompt-injection blocking, toxicity detection, and log buffering) and can be
-  adapted as a starting point when building a refreshed automated test suite for
-  the current pipeline.【F:test_guardrail.py†L1-L52】
+  payloads for quick inspection without deploying the API.
 
 ## 7. HuggingFace Token Setup
 
