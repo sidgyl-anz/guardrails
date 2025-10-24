@@ -9,6 +9,7 @@ import json
 import base64
 import unicodedata
 import logging
+import threading
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -156,24 +157,15 @@ class LLMSecurityGuardrails:
 
         # local model dir
         self.cls_local_dir = "/tmp/cls_model"
-        self._ensure_cls_local()
-
-        # CLS model
-        logger.info("Loading CLS model from local directory...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.cls_tok = AutoTokenizer.from_pretrained(self.cls_local_dir)
-        self.cls_mdl = AutoModelForSequenceClassification.from_pretrained(self.cls_local_dir).to(self.device).eval()
 
-        # optional meta threshold
-        meta_path = os.path.join(self.cls_local_dir, "pipeline_meta_aug_60k.json")
-        if os.path.exists(meta_path) and "CLS_THR" not in os.environ:
-            try:
-                with open(meta_path, "r") as f:
-                    meta = json.load(f)
-                self.cls_threshold = float(meta.get("threshold_val", self.cls_threshold))
-                logger.info(f"Using CLS threshold = {self.cls_threshold:.2f} (from meta)")
-            except Exception as e:
-                logger.warning(f"Could not read meta JSON: {e}")
+        # CLS model loading state
+        self.cls_tok = None
+        self.cls_mdl = None
+        self._cls_ready = threading.Event()
+        self._cls_error: Optional[Exception] = None
+        self._cls_loader = threading.Thread(target=self._load_cls_model, name="cls-loader", daemon=True)
+        self._cls_loader.start()
 
         # Presidio
         self.analyzer = AnalyzerEngine()
@@ -203,9 +195,36 @@ class LLMSecurityGuardrails:
         logger.info(f"Pulling CLS files from: gs://{self.gcs_bucket}/{self.cls_prefix}")
         download_prefix_from_gcs(self.gcs_bucket, self.cls_prefix, self.cls_local_dir)
 
+    def _load_cls_model(self) -> None:
+        try:
+            self._ensure_cls_local()
+            logger.info("Loading CLS model from local directory...")
+            cls_tok = AutoTokenizer.from_pretrained(self.cls_local_dir)
+            cls_mdl = AutoModelForSequenceClassification.from_pretrained(self.cls_local_dir).to(self.device).eval()
+
+            meta_path = os.path.join(self.cls_local_dir, "pipeline_meta_aug_60k.json")
+            if os.path.exists(meta_path) and "CLS_THR" not in os.environ:
+                try:
+                    with open(meta_path, "r") as f:
+                        meta = json.load(f)
+                    self.cls_threshold = float(meta.get("threshold_val", self.cls_threshold))
+                    logger.info(f"Using CLS threshold = {self.cls_threshold:.2f} (from meta)")
+                except Exception as e:
+                    logger.warning(f"Could not read meta JSON: {e}")
+
+            self.cls_tok = cls_tok
+            self.cls_mdl = cls_mdl
+            self._cls_ready.set()
+            logger.info("CLS model loaded and ready.")
+        except Exception as exc:
+            self._cls_error = exc
+            logger.exception("Failed to load CLS model; CLS checks will be skipped until available.")
+
     # -------- scorers --------
     @torch.no_grad()
     def _cls_prob(self, text: str) -> float:
+        if not self._cls_ready.is_set():
+            raise RuntimeError("CLS model is not ready.")
         enc = self.cls_tok([text], truncation=True, padding=True, return_tensors="pt").to(self.device)
         logits = self.cls_mdl(**enc).logits
         p = torch.sigmoid(logits[:, 1] - logits[:, 0]).detach().cpu().numpy()[0]
@@ -295,7 +314,15 @@ class LLMSecurityGuardrails:
         text_for_cls = masked_in if has_pii else deobf_text
         rec["prompt_processed"] = text_for_cls
 
-        # CLS final gate
+        # CLS final gate (may be skipped while model loads)
+        if not self._cls_ready.is_set():
+            rec["flags"]["cls_check_skipped"] = True
+            rec["flags"]["cls_prob_unsafe"] = None
+            if self._cls_error:
+                rec["flags"]["cls_error"] = str(self._cls_error)
+            return rec
+
+        rec["flags"]["cls_check_skipped"] = False
         p_cls = self._cls_prob(text_for_cls)
         rec["flags"]["cls_prob_unsafe"] = round(p_cls, 3)
         if p_cls >= self.cls_threshold:
