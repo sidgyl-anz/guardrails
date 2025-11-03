@@ -30,6 +30,28 @@ The application is containerized using Docker, which allows for easy deployment 
 
 The security guardrails pipeline is implemented and processes both the user prompt and the LLM response, applying a series of security checks at each stage.
 
+#### 2.2 Guardrail Layers
+
+The framework combines configured public modules with custom components that are purpose-built for healthcare-domain risk control.
+
+**Public Guardrails (Configured)**
+
+| Module | Source | Function | Configuration |
+| --- | --- | --- | --- |
+| Detoxify (RoBERTa) | Open-source | Detects toxic / biased text | Threshold τ = 0.70 |
+| Microsoft Presidio | Open-source toolkit | Detects & masks PII / PHI (names, emails, IDs) | Added health-term entities |
+| Prompt Injection Classifier (DeBERTa v3) | Hugging Face (ProtectAI) | Detects prompt-injection attempts | Threshold τ = 0.95 |
+
+These open modules provide baseline security through configuration and threshold tuning only. The current implementation does not include separate embedding anomaly detectors or response-schema validators.
+
+**Custom Guardrails (Developed)**
+
+| Module | Type | Description |
+| --- | --- | --- |
+| Unsafe-Query Classifier | ML (DistilRoBERTa) | Fine-tuned binary classifier detecting unsafe / obfuscated medical prompts |
+| Obfuscation Detector | Rule-based | Regex + entropy scanner decoding ROT13 / Base64 / code-fence payloads |
+| Guardrail Orchestrator | Python service | `LLMSecurityGuardrails` coordinates the sequential input/output checks and metadata |
+
 The pipeline is composed of the following guardrails:
 
 *   **Obfuscation Hard Block:** Detects and decodes code fences, ROT13 strings, and Base64 payloads before any other analysis, immediately rejecting prompts that hide their intent.
