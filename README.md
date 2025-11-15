@@ -115,6 +115,68 @@ code attempts to download the model without authentication and will still run in
 most environments thanks to the try/except fallback logic in
 `standalone_guardrail.py`.
 
+## Installation
+
+The project targets Python 3.10+. The recommended installation flow uses a
+virtual environment so that the security and ML dependencies remain isolated
+from the rest of your machine:
+
+1. **Clone the repository** (or copy the source into your working directory).
+2. **Create and activate a virtual environment**:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Install the Python dependencies**:
+
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+4. **(Optional) Configure environment variables** for custom threshold tuning or
+   access tokens, e.g. `HF_TOKEN`, `INJ_THR`, `PII_THR`, `TOX_THR`, or
+   `CLS_THR`.
+
+If you plan on running the FastAPI service inside Docker, the provided
+`Dockerfile` already performs the dependency installation and exposes the
+application on port `8000` when built and started with `docker compose` or
+`docker run`.
+
+## Running the Project
+
+You can interact with the guardrails in several ways:
+
+### FastAPI service
+
+Start the API locally with Uvicorn once your environment is configured:
+
+```bash
+uvicorn main:app --reload
+```
+
+This launches the `/health` and `/process` endpoints. Visit
+`http://127.0.0.1:8000/docs` for the interactive Swagger UI where you can submit
+prompts and inspect the guardrail responses.
+
+### Standalone scripts
+
+Run the guardrails directly without the API for quick experiments or
+visualizations:
+
+```bash
+python standalone_guardrail.py          # process prompts/responses from code
+python graph.py                         # print guardrail verdicts for samples
+python test_guardrail.py                # execute unit-style checks
+```
+
+Each script prints diagnostic information about which guardrails triggered and
+what the sanitized input/output looks like. The notebooks in
+`guardrails_tester.ipynb` and `colab/` offer a more exploratory, guided
+experience.
+
 ## Conclusion
 
 This project has demonstrated the successful implementation of a comprehensive security guardrail system for LLM-powered conversational AI applications. The system is effective in mitigating a wide range of risks, and it provides a solid foundation for building safe and reliable conversational AI applications.
