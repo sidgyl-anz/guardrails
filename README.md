@@ -145,6 +145,36 @@ application on port `8000` when built and started with `docker compose` or
 
 You can interact with the guardrails in several ways:
 
+### Input & configuration requirements
+
+The guardrail pipeline expects a handful of inputs and supporting files to be
+present before the API can accept traffic:
+
+* **Request payload** – the `/process` endpoint only accepts JSON with at least
+  one of `user_prompt` or `llm_response` populated. Sending both fields triggers
+  the full prompt/response pipeline, while providing just one field limits the
+  evaluation to the corresponding half of the stack (see `main.py`).
+* **CLS model artifacts** – a Google Cloud Storage bucket must contain the
+  binary classifier in Hugging Face format (`config.json`, `pytorch_model.bin`,
+  `tokenizer.json`, etc.). Set `GCS_BUCKET` to the bucket name and optionally
+  `CLS_PREFIX` to the folder inside that bucket. At startup the files are
+  streamed into `/tmp/cls_model`, so the container or VM must allow writes to
+  that path. If a `pipeline_meta_aug_60k.json` file is present in that folder it
+  will be used to override the CLS threshold unless `CLS_THR` is explicitly set
+  in the environment.
+* **Google Cloud credentials** – the download code (`google-cloud-storage`
+  client) relies on Application Default Credentials. When running locally, set
+  `GOOGLE_APPLICATION_CREDENTIALS` to a service-account JSON key or authenticate
+  with `gcloud auth application-default login` so the bucket read succeeds.
+* **Environment variables** – threshold tuning and optional features are read
+  at process start. Important variables include `INJ_THR`, `TOX_THR`, `PII_THR`,
+  `CLS_THR`, `OUTPUT_PII_BLOCKLIST`, and `HF_TOKEN` for Hugging Face downloads.
+  Omitting them falls back to the defaults that are hard-coded in
+  `main.py`/`standalone_guardrails.py`.
+
+Without the CLS model files or valid Google Cloud credentials the service will
+still start, but CLS checks remain disabled until the artifacts can be fetched.
+
 ### FastAPI service
 
 Start the API locally with Uvicorn once your environment is configured:
